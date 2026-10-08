@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Модуль III{% endblock %}
+{% block content %}
+{% set c = r.clusters %}
+<h1><span class="rn m3" style="vertical-align:middle">III</span> Кластеризация активов</h1>
+<p class="lede">K-medoids группирует бумаги по поведению цены, риску и мультипликаторам; центры кластеров (медоиды) — реальные активы. Fuzzy C-means даёт степени принадлежности для внутригруппового распределения. Признаки нормализованы, чтобы каждый вносил равный вклад.</p>
+<div class="grid g4">
+  <div class="kpi m3"><div class="v">{{ c.k }}</div><div class="l">кластеров (по максимуму силуэта)</div></div>
+  <div class="kpi m3"><div class="v" style="font-size:20px">{{ c.medoids | join(', ') }}</div><div class="l">медоиды K-medoids</div></div>
+  <div class="kpi m3"><div class="v">{{ fmt(c.metrics.loc['K-medoids','silhouette'], 'num', 2) }}</div><div class="l">силуэт K-medoids</div></div>
+  <div class="kpi m3"><div class="v">{{ fmt(c.metrics.loc['Fuzzy C-means','davies_bouldin'], 'num', 2) }}</div><div class="l">индекс Дэвиса–Боулдина FCM</div></div>
+</div>
+<div class="grid g-7-5" style="margin-top:18px">
+  <figure class="fig panel"><img alt="Кластеры" src="data:image/png;base64,{{ img_pca }}"></figure>
+  <figure class="fig panel"><img alt="U" src="data:image/png;base64,{{ img_u }}"></figure>
+</div>
+<h2>Показатели эффективности кластерных портфелей (табл. 2 [A3])</h2>
+{{ table(r.cluster_table.rename(columns={'total_return':'Доходность','annual_return':'Годовая доходность','annual_vol':'Годовая волатильность','sharpe':'Шарп','max_drawdown':'Макс. просадка','turnover':'Оборачиваемость'}), pct=('Доходность','Годовая доходность','Годовая волатильность','Макс. просадка','Оборачиваемость'), d=2, index_name='Стратегия') | safe }}
+<p class="note">Ежемесячная перекластеризация по скользящему окну 252 дня. K-means и K-medoids: в каждом кластере берётся актив с лучшим Шарпом за окно, веса равные. FCM: бюджет кластера 1/k распределяется пропорционально u<sub>ij</sub><sup>m</sup>·max(Sharpe, 0). Издержки {{ raw.tc }} б.п., безрисковая ставка {{ fmt(st.risk_free, 'pct', 0) }}.</p>
+<div class="grid g3">
+  <div><h2>Качество разбиения</h2>{{ table(c.metrics.rename(columns={'silhouette':'Силуэт','davies_bouldin':'Дэвис–Боулдин','inertia':'Стоимость'}), d=3, index_name='Метод') | safe }}</div>
+  <figure class="fig panel" style="margin-top:20px"><img alt="k" src="data:image/png;base64,{{ img_k }}"></figure>
+  <figure class="fig panel" style="margin-top:20px"><img alt="corr" src="data:image/png;base64,{{ img_corr }}"></figure>
+</div>
+<h2>Признаки активов</h2>
+{{ table(feat_table, d=2, index_name='Актив') | safe }}
+<p class="note">Номера кластеров разных методов не обязаны совпадать: каждый метод нумерует группы независимо.</p>
+{% endblock %}

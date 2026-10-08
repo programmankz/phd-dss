@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Модуль IV{% endblock %}
+{% block content %}
+{% set s = r.signals %}{% set b = r.backtest %}
+<h1><span class="rn m4" style="vertical-align:middle">IV</span> Ранговые сигналы и оптимизация</h1>
+<p class="lede">Этап A: прогноз доходности на t+1 по техническим признакам, walk-forward с переобучением, сглаживание по 10 прогнозам и ранги sᵢ = Rank(r̂ᵢ)/N. Этап B: максимизация wᵀs / √(wᵀΣw) с лимитами профиля и кластеров. Вне выборки с {{ s.test_start.date() }}.</p>
+<div class="grid g4">
+  {% set sw = b.metrics.loc['Signal Weighted'] %}{% set ms = b.metrics.loc['Max Signal-to-Risk'] %}
+  <div class="kpi m4"><div class="v">{{ fmt(sw.sharpe, 'num', 2) }}</div><div class="l">Шарп Signal Weighted</div></div>
+  <div class="kpi m4"><div class="v">{{ fmt(ms.sharpe, 'num', 2) }}</div><div class="l">Шарп Max Signal-to-Risk</div></div>
+  <div class="kpi m4"><div class="v">{{ fmt(ms.max_drawdown, 'pct', 1) }}</div><div class="l">макс. просадка Max Signal-to-Risk</div></div>
+  <div class="kpi m4"><div class="v">{{ fmt(s.metrics.iloc[-1].IC, 'num', 3) }}</div><div class="l">IC ансамбля вне выборки (t = {{ fmt(s.metrics.iloc[-1].IC_t, 'num', 2) }})</div></div>
+</div>
+<h2>Бэктест</h2>
+<figure class="fig panel"><img alt="Кривые" src="data:image/png;base64,{{ img_curves }}"></figure>
+{{ table(b.metrics.rename(columns={'total_return':'Доходность','annual_return':'Годовая','annual_vol':'Волатильность','sharpe':'Шарп','max_drawdown':'Макс. просадка','turnover':'Оборот за ребаланс.'}), pct=('Доходность','Годовая','Волатильность','Макс. просадка','Оборот за ребаланс.'), d=2, index_name='Стратегия', highlight='Max Signal-to-Risk') | safe }}
+<p class="note">Ребалансировка: {{ REBALANCE[raw.rebalance] }}; издержки {{ raw.tc }} б.п. от оборота; ковариация {{ st.cov_method }}, окно 252 дня; лимиты профиля «{{ config.PROFILES[st.profile].label }}» применяются к Max Signal-to-Risk и Min Variance. Безрисковая ставка {{ fmt(st.risk_free, 'pct', 0) }}.</p>
+<h2>Прогнозные модели (вне выборки)</h2>
+<div class="grid g-7-5">
+  <div>{{ table(s.metrics.rename(columns={'hit_rate':'Точность направления','IC_t':'t(IC)'}), pct=('Точность направления',), d=4, index_name='Модель') | safe }}
+    <p class="note">IC — средняя ранговая корреляция Спирмена между прогнозом и фактической доходностью по активам в каждый день; для ранговых сигналов это основная метрика качества.</p></div>
+  <figure class="fig panel"><img alt="IC" src="data:image/png;base64,{{ img_ic }}"></figure>
+</div>
+<h2>Текущие сигналы</h2>
+<div class="grid g2">
+  <figure class="fig panel"><img alt="Ранги" src="data:image/png;base64,{{ img_ranks }}"></figure>
+  <div>{{ table(s.latest.rename(columns={'raw_forecast_bp':'Сырой прогноз, б.п.','smoothed_score':'Сглаж. оценка','rank_signal':'Ранг s'}), d=3, index_name='Актив') | safe }}</div>
+</div>
+{% endblock %}

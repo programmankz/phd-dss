@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Модуль II{% endblock %}
+{% block content %}
+{% set f = r.fx %}
+<h1><span class="rn m2" style="vertical-align:middle">II</span> Валютные риски тенге</h1>
+<p class="lede">Официальные курсы НБ РК с {{ f.period[0] }} по {{ f.period[1] }}, {{ fmt(f.n_obs) }} дневных наблюдений. Описательная статистика, корреляции и линейный тренд — как в [A2]; индекс риска и ожидаемое ослабление тенге передаются в модуль интеграции.</p>
+<div class="grid g4">
+  <div class="kpi m2"><div class="v">{{ fmt(f.fx_risk, 'num', 2) }}</div><div class="l">индекс валютного риска (0–1), режим: {{ f.regime.lower() }}</div></div>
+  <div class="kpi m2"><div class="v">{{ fmt(f.exp_depreciation, 'pct', 1) }}</div><div class="l">ожидаемое ослабление KZT к USD, в год</div></div>
+  <div class="kpi m2"><div class="v">{{ fmt(f.pc1_share, 'pct', 0) }}</div><div class="l">дисперсии USD, EUR, CNY объясняет один фактор (PC1)</div></div>
+  <div class="kpi m2"><div class="v">{{ f.shocks|length }}</div><div class="l">выявленных девальвационных шоков</div></div>
+</div>
+<h2>Динамика курсов</h2>
+<figure class="fig panel"><img alt="Курсы" src="data:image/png;base64,{{ img_rates }}"></figure>
+<div class="grid g3" style="margin-top:14px">
+  <figure class="fig panel"><img alt="Корреляции" src="data:image/png;base64,{{ img_corr }}"></figure>
+  <figure class="fig panel"><img alt="R2" src="data:image/png;base64,{{ img_r2 }}"></figure>
+  <figure class="fig panel"><img alt="Риск" src="data:image/png;base64,{{ img_risk }}"></figure>
+</div>
+<div class="grid g2">
+  <div><h2>Описательная статистика (табл. 1 [A2])</h2>{{ table(f.stats, d=3, index_name='Показатель') | safe }}</div>
+  <div>
+    <h2>Линейный тренд</h2>{{ table(f.regression, d=3, index_name='Пара') | safe }}
+    <p class="note">Тренд по времени описывает долгосрочную траекторию, но не краткосрочный риск: для него используются компоненты индекса ниже.</p>
+    <h2>Компоненты индекса риска</h2>
+    {{ table(f.risk_components.rename(columns={'vol_30d':'Волат. 30д','vol_pct':'Перцентиль волат.','depr_60d':'Ослабл. KZT 60д','mom_pct':'Перцентиль ослабл.','risk':'Риск','weight':'Вес'}), d=3, index_name='Валюта') | safe }}
+    {% if f.shocks|length %}<h2>Шоки</h2>{{ table(f.shocks.set_index('date').rename(columns={'before':'До','after_60d':'Через 60 дн.','move_pct':'Изменение, %'}), d=1, index_name='Дата') | safe }}{% endif %}
+  </div>
+</div>
+{% endblock %}

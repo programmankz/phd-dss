@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.dss_cache/
+.venv/
+venv/
+dss_report.html
+.pytest_cache/
+.DS_Store

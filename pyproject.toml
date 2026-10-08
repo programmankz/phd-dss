@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phd-dss"
+version = "1.0.0"
+description = "Decision support system for investment portfolio management (PhD, L.N. Gumilyov ENU)"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "pandas>=2.1", "scipy>=1.11", "scikit-learn>=1.4", "matplotlib>=3.8", "flask>=3.0"]
+
+[project.optional-dependencies]
+full = ["statsmodels>=0.14", "yfinance>=0.2", "tensorflow>=2.15"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+dss = "dss.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dss*", "webapp*"]
+
+[tool.setuptools.package-data]
+webapp = ["templates/*.html", "static/*.css"]

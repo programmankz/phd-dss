@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Модуль I{% endblock %}
+{% block content %}
+{% set m = r.macro %}
+<h1><span class="rn m1" style="vertical-align:middle">I</span> Макроэкономический прогноз</h1>
+<p class="lede">Панель {{ fmt(m.n_countries) }} стран, {{ fmt(m.n_obs) }} наблюдений после построения признаков. Обучение по {{ m.extra.train_end }} г. включительно, тест — последующие годы ({{ fmt(m.test_n) }} наблюдений). Признаки используют только прошлые значения.</p>
+<div class="grid g4">
+  <div class="kpi m1"><div class="v">{{ fmt(m.recession_prob, 'pct', 0) }}</div><div class="l">P(рецессии) в {{ m.forecasts.index[0] }} г., Gradient Boosting</div></div>
+  <div class="kpi m1"><div class="v">{{ fmt(m.scenario_path(st.scenario).iloc[0], 'num', 2) }}%</div><div class="l">рост ВВП {{ m.forecasts.index[0] }} г., ARIMA{{ m.extra.arima_order }} + сценарий</div></div>
+  <div class="kpi m1"><div class="v">{{ m.phase }}</div><div class="l">фаза экономического цикла</div></div>
+  <div class="kpi m1"><div class="v" style="font-size:19px">{{ m.kz_dtw_cluster }}</div><div class="l">DTW-кластер (статический K-means: {{ m.kz_static_cluster }})</div></div>
+</div>
+
+<h2>Прогноз для Казахстана и сценарии</h2>
+<figure class="fig panel"><img alt="Прогноз" src="data:image/png;base64,{{ img_kz }}"></figure>
+<div class="grid g2" style="margin-top:14px">
+  <div><h3>Прогнозы моделей, %</h3>{{ table(m.forecasts.drop(columns=['ARIMA_lo','ARIMA_hi']), d=2, index_name='Год') | safe }}
+    <p class="note">Консенсус — среднее моделей, прошедших правило правдоподобности: {{ m.consensus_models | join(', ') }}.</p></div>
+  <div><h3>Сценарии (поправки к ARIMA, табл. 9 [A1]), %</h3>{{ table(scen, d=2) | safe }}
+    <h3 style="margin-top:12px">Отбор порядка ARIMA по AIC</h3>{{ table(m.arima_table.set_index('order')[['AIC']], d=1, index_name='Модель', highlight='ARIMA' ~ m.extra.arima_order) | safe }}</div>
+</div>
+
+<h2>Анализ чувствительности прогноза следующего года</h2>
+<form method="get" class="controls" action="/macro">
+  {% for k, v in raw.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  {% for k, spec in config.SENSITIVITY.items() %}
+  <label>{{ spec.label }}<input type="number" step="any" name="s_{{ k }}" value="{{ sens_in[k] }}"></label>
+  {% endfor %}
+  <button class="btn" type="submit">Рассчитать</button>
+</form>
+<div class="grid g5">
+  {% for k, spec in config.SENSITIVITY.items() %}<div class="kpi"><div class="v">{{ '%+.2f' % sens[k] }}</div><div class="l">{{ spec.label }}, п.п.</div></div>{% endfor %}
+</div>
+<p class="note">Суммарный эффект: <b>{{ '%+.2f' % sens.total }} п.п.</b> → рост ≈ {{ fmt(m.forecasts['ARIMA'].iloc[0] + sens.total, 'num', 2) }}%. Кусочно-линейная интерполяция по диапазонам табл. 10 [A1]; факторы рассматриваются поодиночке, взаимодействия не учитываются.</p>
+
+<h2>Классификация рецессий и регрессия роста (тестовая выборка)</h2>
+<div class="grid g2">
+  <div>{{ table(m.classification.rename(columns={'accuracy':'Точность','roc_auc':'ROC-AUC','recall_recession':'Полнота (рецессии)','f1_recession':'F1 (рецессии)'}), d=3, index_name='Классификатор', highlight='Gradient Boosting') | safe }}
+    <p class="note">Критерий Мак-Нимара (GB vs RF): χ²(1) = {{ fmt(m.mcnemar[0], 'num', 2) }}, p = {{ '%.4f' % m.mcnemar[1] }}.</p>
+    {{ table(m.regression, d=3, index_name='Регрессор', highlight='Gradient Boosting') | safe }}</div>
+  <div>
+    <figure class="fig panel"><img alt="Важность" src="data:image/png;base64,{{ img_imp }}"></figure>
+    <h3 style="margin-top:12px">Проверки устойчивости (Gradient Boosting)</h3>{{ table(m.robustness, d=3, index_name='Спецификация') | safe }}
+  </div>
+</div>
+
+<h2>Кластеризация стран</h2>
+<div class="grid g2">
+  <figure class="fig panel"><img alt="K-means" src="data:image/png;base64,{{ img_static }}"></figure>
+  {% if img_dtw %}<figure class="fig panel"><img alt="DTW" src="data:image/png;base64,{{ img_dtw }}"></figure>{% endif %}
+</div>
+<p class="note">Статическая кластеризация описывает уровень и разброс роста за весь период, DTW — форму траектории, поэтому одна страна может попадать в разные группы. Казахстан: статический K-means — «{{ m.kz_static_cluster }}», DTW — «{{ m.kz_dtw_cluster }}»{% if m.kz_static_cluster != m.kz_dtw_cluster %}: высокая волатильность 1990-х сдвигает статический профиль, а форма циклов ближе к группе «{{ m.kz_dtw_cluster }}»{% else %} — оба метода согласуются{% endif %}.</p>
+{% endblock %}

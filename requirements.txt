@@ -1,0 +1,11 @@
+numpy>=1.26
+pandas>=2.1
+scipy>=1.11
+scikit-learn>=1.4
+matplotlib>=3.8
+flask>=3.0
+# optional
+# statsmodels>=0.14   # exact-MLE ARIMA instead of the built-in CLS estimator
+# yfinance>=0.2       # python -m dss.cli fetch nse
+# tensorflow>=2.15    # RNN, LSTM, CNN-LSTM, LSTM-MLP models of Module IV
+# pytest>=8

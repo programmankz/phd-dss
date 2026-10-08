@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Данные{% endblock %}
+{% block content %}
+<h1>Данные и источники</h1>
+<p class="lede">Система берёт файлы из папки <code>{{ data_dir }}</code>. Если файла нет, используется синтетический демо-набор.</p>
+<div class="tbl"><table class="src"><thead><tr><th>Набор</th><th>Текущий источник</th></tr></thead><tbody>
+{% for k, v in r.sources.items() %}<tr><td>{{ k }}</td><td>{{ v }}{% if v.startswith('DEMO') %} <b style="color:#B03A48">— синтетика</b>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+<h2>Как подключить реальные данные</h2>
+<pre>python -m dss.cli fetch gdp        # IMF WEO DataMapper → data/gdp_growth.csv
+python -m dss.cli fetch fx         # НБ РК, дневные курсы → data/fx_rates.csv (долго, с докачкой)
+python -m dss.cli fetch nse        # Yahoo Finance, 20 акций NSE → data/prices_nse.csv
+python -m dss.cli warmup           # предварительный расчёт всех модулей</pre>
+<table><thead><tr><th>Файл</th><th>Формат</th><th>Модуль</th></tr></thead><tbody>
+<tr><td><code>gdp_growth.csv</code></td><td>country, 1980, …, 2024 — рост реального ВВП, %</td><td>I</td></tr>
+<tr><td><code>fx_rates.csv</code></td><td>Date, USD, EUR, CNY, RUB — тенге за единицу</td><td>II</td></tr>
+<tr><td><code>prices_kase.csv</code></td><td>Date, HSBK, KSPI, … — цены закрытия (экспорт с kase.kz)</td><td>III, IV</td></tr>
+<tr><td><code>fundamentals_kase.csv</code></td><td>ticker, sector, PB, PE</td><td>III</td></tr>
+<tr><td><code>prices_nse.csv</code></td><td>Date, HDFCBANK.NS, … — цены закрытия</td><td>III, IV</td></tr>
+</tbody></table>
+<p class="note">После замены файлов нажмите <a href="/refresh?{{ qs }}">«Сбросить кэш и пересчитать»</a>.</p>
+{% endblock %}

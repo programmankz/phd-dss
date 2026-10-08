@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}СППР{% endblock %} — управление инвестиционным портфелем</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="shell">
+  <nav class="side" aria-label="Разделы">
+    <p class="brand">СППР управления инвестиционным портфелем</p>
+    <p class="brand-sub">Дурбенов Р.М. · ЕНУ им. Л.Н. Гумилёва</p>
+    <ul class="nav">
+      <li><a href="/?{{ qs }}" class="{{ 'on' if page=='decision' }}"><span class="rn m0">✓</span>Решение</a></li>
+      <li class="sep" role="presentation"></li>
+      <li><a href="/macro?{{ qs }}" class="{{ 'on' if page=='macro' }}"><span class="rn m1">I</span>Макропрогноз</a></li>
+      <li><a href="/fx?{{ qs }}" class="{{ 'on' if page=='fx' }}"><span class="rn m2">II</span>Валютные риски</a></li>
+      <li><a href="/clusters?{{ qs }}" class="{{ 'on' if page=='clusters' }}"><span class="rn m3">III</span>Кластеризация</a></li>
+      <li><a href="/signals?{{ qs }}" class="{{ 'on' if page=='signals' }}"><span class="rn m4">IV</span>Сигналы и бэктест</a></li>
+      <li class="sep" role="presentation"></li>
+      <li><a href="/data?{{ qs }}" class="{{ 'on' if page=='data' }}"><span class="rn mx">≡</span>Данные</a></li>
+      <li><a href="/report?{{ qs }}"><span class="rn mx">↓</span>Скачать отчёт</a></li>
+    </ul>
+    <p class="side-foot">Версия 1.0 · модели по статьям [A1]–[A4]</p>
+  </nav>
+  <main>
+    {% if r.is_demo %}
+    <div class="demo" role="status"><b>Демо-режим.</b> Часть данных синтетическая (см. «Данные»). Результаты иллюстрируют работу системы и не являются эмпирическими выводами.</div>
+    {% endif %}
+    <form class="controls" method="get" action="{{ request.path }}">
+      <label>Профиль инвестора
+        <select name="profile">{% for k, p in config.PROFILES.items() %}<option value="{{ k }}" {{ 'selected' if raw.profile==k }}>{{ p.label }}</option>{% endfor %}</select></label>
+      <label>Сценарий
+        <select name="scenario">{% for k, s in config.SCENARIOS.items() %}<option value="{{ k }}" {{ 'selected' if raw.scenario==k }}>{{ s.label }}</option>{% endfor %}</select></label>
+      <label>Рынок
+        <select name="universe"><option value="kase" {{ 'selected' if raw.universe=='kase' }}>KASE</option><option value="nse" {{ 'selected' if raw.universe=='nse' }}>NSE (Индия)</option></select></label>
+      <label>Модели сигналов
+        <select name="models">
+          <option value="fast" {{ 'selected' if raw.models=='fast' }}>Ridge + RF + GB</option>
+          <option value="sklearn" {{ 'selected' if raw.models=='sklearn' }}>8 моделей scikit-learn</option>
+          <option value="full" {{ 'selected' if raw.models=='full' }}>11 моделей статьи + MLP{{ '' if tf else ' (нужен TensorFlow)' }}</option>
+        </select></label>
+      <label>Ребалансировка
+        <select name="rebalance">{% for k, v in REBALANCE.items() %}<option value="{{ k }}" {{ 'selected' if raw.rebalance==k }}>{{ v }}</option>{% endfor %}</select></label>
+      <label>Издержки, б.п.<input type="number" name="tc" min="0" max="200" step="1" value="{{ raw.tc }}"></label>
+      <label>Ковариация
+        <select name="cov"><option value="ledoit_wolf" {{ 'selected' if raw.cov=='ledoit_wolf' }}>Ledoit–Wolf</option><option value="sample" {{ 'selected' if raw.cov=='sample' }}>Выборочная (как в [A4])</option></select></label>
+      <label class="chk"><input type="checkbox" name="fuzzy" value="1" {{ 'checked' if raw.fuzzy=='1' }}>Лимиты по матрице U (FCM)</label>
+      <button class="btn" type="submit">Пересчитать</button>
+    </form>
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

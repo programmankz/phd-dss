@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Решение{% endblock %}
+{% block content %}
+{% set d = r.decision %}
+<h1>Рекомендация по портфелю</h1>
+<p class="lede">Сигналы четырёх модулей последовательно сужают решение: макропрогноз задаёт бюджет риска, валютный модуль — хедж, кластеры — лимиты диверсификации, ранговые сигналы — веса внутри рисковой части.</p>
+
+<section class="chain" aria-label="Цепочка принятия решения">
+  {% set cls = {'I':'m1','II':'m2','III':'m3','IV':'m4'} %}
+  {% for s in d.steps %}
+  <div class="link {{ cls[s.module] }}">
+    <div class="hd"><span class="rn {{ cls[s.module] }}">{{ s.module }}</span><b>{{ s.title }}</b></div>
+    <ul>{% for f in s.facts %}<li>{{ f }}</li>{% endfor %}</ul>
+    <div class="res">{{ s.result }}</div>
+    {% if s.trail %}<div class="trail">{{ s.trail | join('; ') }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  <div class="link out">
+    <div class="hd"><span class="rn m0">✓</span><b>Решение СППР</b></div>
+    <div class="big">{{ fmt(d.risky_share, 'pct', 0) }}</div>
+    <div class="cap">в рисковых активах · профиль «{{ d.profile.label }}», сценарий {{ config.SCENARIOS[d.scenario].label }}</div>
+    <div class="row"><span>Безрисковая часть</span><b>{{ fmt(1 - d.risky_share, 'pct', 0) }}</b></div>
+    <div class="row"><span>из неё в USD</span><b>{{ fmt(d.usd_hedge_share, 'pct', 0) }}</b></div>
+    <div class="row"><span>Ожид. волатильность</span><b>{{ fmt(d.exp_vol, 'pct', 1) }}</b></div>
+    <div class="row"><span>VaR 95%, 1 мес.</span><b>{{ fmt(d.var95_1m, 'pct', 1) }}</b></div>
+  </div>
+</section>
+
+{% for w in d.warnings %}<div class="warn">{{ w }}</div>{% endfor %}
+
+<h2>Структура портфеля</h2>
+<div class="grid g-7-5">
+  <figure class="fig panel"><img alt="Рекомендуемые веса" src="data:image/png;base64,{{ img_alloc }}"></figure>
+  <div>
+    {{ table(alloc_table, pct=('Вес',), d=2, index_name='Актив') | safe }}
+    <h3 style="margin-top:16px">Экспозиция по кластерам (доля всего портфеля)</h3>
+    {% set ce = d.cluster_exposure.to_frame('Доля') %}
+    {{ table(ce, pct=('Доля',), index_name='Кластер') | safe }}
+  </div>
+</div>
+
+<h2>Контекст: прогноз роста ВВП</h2>
+<figure class="fig panel"><img alt="Прогноз ВВП" src="data:image/png;base64,{{ img_kz }}">
+<figcaption>Прогнозы моделей Модуля I; в консенсус включены: {{ r.macro.consensus_models | join(', ') }} (правило правдоподобности задано заранее).</figcaption></figure>
+{% endblock %}
