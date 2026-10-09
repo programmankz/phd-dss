@@ -6,3 +6,4 @@ venv/
 dss_report.html
 .pytest_cache/
 .DS_Store
+.lockenv/

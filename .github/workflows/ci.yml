@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "$(grep '^ruff==' requirements-lock.txt)"
+      - run: ruff check .
+
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }}, ${{ matrix.deps }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # exact versions from the lock file (NFR-01) on the three target OSes (NFR-07)
+          - { os: ubuntu-latest,  python: "3.12", deps: requirements-lock.txt }
+          - { os: windows-latest, python: "3.12", deps: requirements-lock.txt }
+          - { os: macos-latest,   python: "3.12", deps: requirements-lock.txt }
+          # minimum supported Python with the version ranges of requirements.txt
+          - { os: ubuntu-latest,  python: "3.10", deps: requirements.txt }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: ${{ matrix.deps }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r ${{ matrix.deps }} pytest
+      - name: Run tests
+        run: python -m pytest -q --durations=5

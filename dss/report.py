@@ -45,7 +45,7 @@ def build_report(r) -> str:
     demo = ("<div class='demo'><b>Демо-режим.</b> Часть данных синтетическая; результаты не являются "
             "эмпирическими выводами.</div>") if r.is_demo else ""
     src = "".join(f"<tr><td>{html.escape(k)}</td><td>{html.escape(v)}</td></tr>" for k, v in r.sources.items())
-    warns = "".join(f"<div class='warn'>{html.escape(w)}</div>" for w in d.warnings)
+    warns = "".join(f"<div class='warn'>{html.escape(w)}</div>" for w in r.data_errors + d.warnings)
     m, f, c, s, b = r.macro, r.fx, r.clusters, r.signals, r.backtest
     body = f"""
 <main style="max-width:1180px;margin:0 auto">
