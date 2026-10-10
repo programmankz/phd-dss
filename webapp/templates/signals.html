@@ -15,6 +15,19 @@
 <figure class="fig panel"><img alt="Кривые" src="data:image/png;base64,{{ img_curves }}"></figure>
 {{ table(b.metrics.rename(columns={'total_return':'Доходность','annual_return':'Годовая','annual_vol':'Волатильность','sharpe':'Шарп','max_drawdown':'Макс. просадка','turnover':'Оборот за ребаланс.'}), pct=('Доходность','Годовая','Волатильность','Макс. просадка','Оборот за ребаланс.'), d=2, index_name='Стратегия', highlight='Max Signal-to-Risk') | safe }}
 <p class="note">Ребалансировка: {{ REBALANCE[raw.rebalance] }}; издержки {{ raw.tc }} б.п. от оборота; ковариация {{ st.cov_method }}, окно 252 дня; лимиты профиля «{{ config.PROFILES[st.profile].label }}» применяются к Max Signal-to-Risk и Min Variance. Безрисковая ставка {{ fmt(st.risk_free, 'pct', 0) }}.</p>
+<h2>Статистическая значимость</h2>
+<div class="grid g2">
+  <div>
+    <h3>Коэффициенты Шарпа стратегий</h3>
+    {{ table(sig_sharpe, d=2, index_name='Стратегия') | safe }}
+    <p class="note">Блочный бутстреп ({{ r.sharpe_tests.attrs.n_boot }} повторов, блоки по {{ r.sharpe_tests.attrs.block }} дн., {{ r.sharpe_tests.attrs.n_days }} дн. вне выборки); все стратегии оцениваются на одних и тех же выборках дней. p-значение проверяет гипотезу «Шарп стратегии равен Шарпу {{ r.sharpe_tests.attrs.reference }}». Если ДИ разницы содержит 0, преимущество стратегии статистически не подтверждено.</p>
+  </div>
+  <div>
+    <h3>Тест Диболда–Мариано: модель против наивного прогноза r̂ = 0</h3>
+    {{ table(sig_dm, d=3, index_name='Модель') | safe }}
+    <p class="note">Потери — средний по бумагам квадрат ошибки прогноза доходности за день; DM &lt; 0 — модель точнее наивного прогноза. Поправка Харви–Лейборна–Ньюболда, распределение Стьюдента.</p>
+  </div>
+</div>
 <h2>Прогнозные модели (вне выборки)</h2>
 <div class="grid g-7-5">
   <div>{{ table(s.metrics.rename(columns={'hit_rate':'Точность направления','IC_t':'t(IC)'}), pct=('Точность направления',), d=4, index_name='Модель') | safe }}

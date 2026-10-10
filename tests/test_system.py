@@ -48,6 +48,11 @@ def test_full_pipeline_on_demo_data():
     assert np.isclose(d.risky_weights.sum(), 1.0) and d.risky_weights.max() <= prof.max_asset_weight + 1e-6
     assert 0 <= d.usd_hedge_share <= 0.80 and d.var95_1m > 0
     assert {"Signal Weighted", "Equal Weighted"} <= set(r.backtest.metrics.index)
+    # FR-IV-13: significance of every strategy and every forecasting model
+    assert list(r.sharpe_tests.index) == list(r.backtest.daily.columns)
+    assert set(r.forecast_tests.index) == set(r.signals.metrics.index[:-1])
+    sens = pipeline.rule_sensitivity(r)
+    assert np.isclose(sens["coefficients"]["×1"].iloc[0], d.risky_share)
 
 
 def test_profile_change_reuses_module_results():
@@ -84,6 +89,8 @@ def test_all_web_screens_return_200():
             resp = c.get(url)
             assert resp.status_code == 200, f"{url}: {resp.status_code}"
             assert "Демо-режим" in resp.get_data(as_text=True), url
+        assert "Чувствительность правил интеграции" in c.get("/").get_data(as_text=True)
+        assert "Диболда–Мариано" in c.get("/signals").get_data(as_text=True)
         resp = c.get("/?profile=aggressive&scenario=bull&rebalance=M&tc=abc&models=bogus")
         assert resp.status_code == 200                       # bad query values fall back to defaults
 
