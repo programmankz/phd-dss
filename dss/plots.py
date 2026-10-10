@@ -12,7 +12,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 NAVY, TEXT, MUTED, GRID = "#14213D", "#1F2937", "#5B6576", "#D9DEE6"
@@ -181,7 +180,7 @@ def asset_clusters(cl) -> str:
 
 def memberships(U: pd.DataFrame) -> str:
     fig, ax = plt.subplots(figsize=(4.0, 0.32 * len(U) + 1.0))
-    im = ax.imshow(U.values, cmap="Purples", vmin=0, vmax=1, aspect="auto")
+    ax.imshow(U.values, cmap="Purples", vmin=0, vmax=1, aspect="auto")
     ax.set_yticks(range(len(U)), U.index)
     ax.set_xticks(range(U.shape[1]), U.columns)
     for i in range(U.shape[0]):

@@ -11,7 +11,7 @@ dependencies = ["numpy>=1.26", "pandas>=2.1", "scipy>=1.11", "scikit-learn>=1.4"
 
 [project.optional-dependencies]
 full = ["statsmodels>=0.14", "yfinance>=0.2", "tensorflow>=2.15"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.scripts]
 dss = "dss.cli:main"
@@ -21,3 +21,15 @@ include = ["dss*", "webapp*"]
 
 [tool.setuptools.package-data]
 webapp = ["templates/*.html", "static/*.css"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# pyflakes + syntax/runtime errors; E731 off: one-line lambdas are an idiom of the codebase
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E731"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

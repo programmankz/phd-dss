@@ -4,20 +4,23 @@ Each module result is cached in memory and on disk (``.dss_cache/``) under a
 key made of the data fingerprint and the parameters that affect it, so the
 web UI recomputes only what a change of settings actually invalidates
 (e.g. changing the investor profile re-runs only the integration step).
+
+A malformed user CSV does not stop the run: that dataset falls back to the
+demo set, and the reason is reported in ``RunResult.data_errors``.
 """
 from __future__ import annotations
 
 import hashlib
 import os
 import pickle
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
 
 from . import clustering, fx, integration, macro, portfolio, signals
-from .config import Settings, PROFILES
-from .data import load_fundamentals, load_fx, load_gdp, load_prices
+from .config import PROFILES, Settings
+from .data import DataError, load_fundamentals, load_fx, load_gdp, load_prices
 
 CACHE_DIR = Path(os.environ.get("DSS_CACHE_DIR", ".dss_cache"))
 _MEM: dict = {}
@@ -69,12 +72,27 @@ class RunResult:
     decision: integration.Decision
     prices: pd.DataFrame
     sectors: pd.Series
+    data_errors: list = field(default_factory=list)   # user-facing messages, one per broken file
+
+
+def _load(errors: list, loader, *args):
+    """Load a dataset; on a malformed user CSV record the reason and use the demo set."""
+    try:
+        return loader(*args)
+    except DataError as exc:
+        errors.append(f"{exc}. Пока файл не исправлен, для этого набора используются демо-данные.")
+        return loader(*args, source="demo")
 
 
 def run(settings: Settings | None = None) -> RunResult:
     st = settings or Settings()
-    gdp, rates, px = load_gdp(), load_fx(), load_prices(st.universe)
-    fund = load_fundamentals(st.universe, list(px.frame.columns))
+    errors: list = []
+    gdp, rates = _load(errors, load_gdp), _load(errors, load_fx)
+    px = _load(errors, load_prices, st.universe)
+    if px.is_demo:      # keep valuation data consistent with the (demo) tickers
+        fund = load_fundamentals(st.universe, list(px.frame.columns), "demo")
+    else:
+        fund = _load(errors, load_fundamentals, st.universe, list(px.frame.columns))
     prices = px.frame
 
     m = cached("macro", _fingerprint(gdp.frame), lambda: macro.run(gdp.frame))
@@ -99,7 +117,7 @@ def run(settings: Settings | None = None) -> RunResult:
     sources = {"ВВП (Модуль I)": gdp.source, "Курсы (Модуль II)": rates.source,
                "Цены (Модули III–IV)": px.source, "Фундаментальные (Модуль III)": fund.source}
     is_demo = gdp.is_demo or rates.is_demo or px.is_demo
-    return RunResult(st, sources, is_demo, m, f, c, ct, s, bt, d, prices, sectors)
+    return RunResult(st, sources, is_demo, m, f, c, ct, s, bt, d, prices, sectors, errors)
 
 
 def clear_cache():
