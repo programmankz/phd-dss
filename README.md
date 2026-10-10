@@ -57,6 +57,8 @@ python -m dss.cli serve         # веб-интерфейс: http://127.0.0.1:80
 ```bash
 python -m dss.cli decide --profile conservative --scenario stress   # рекомендация в консоли
 python -m dss.cli report -o report.html                              # автономный HTML-отчёт
+python -m dss.cli significance       # 95% ДИ Шарпа стратегий и тест Диболда–Мариано (ФТ-IV-13)
+python -m dss.cli sensitivity        # чувствительность и монотонность правил интеграции
 ```
 
 ## Тесты и проверка стиля
@@ -94,12 +96,14 @@ dss/
   clustering.py    Модуль III (PAM, FCM, DTW реализованы на numpy)
   signals.py       Модуль IV, этап A (прогнозы → ранговые сигналы)
   portfolio.py     Модуль IV, этап B (оптимизация, бэктест)
-  integration.py   модуль интеграции (бюджет риска, хедж, лимиты, веса)
+  significance.py  Модуль IV: значимость (бутстреп Шарпа, Diebold–Mariano)
+  integration.py   модуль интеграции (бюджет риска, хедж, лимиты, веса; анализ чувствительности правил)
   pipeline.py      оркестрация и кэш
   plots.py, report.py, cli.py
 webapp/            Flask-интерфейс (6 страниц)
 tests/             test_core — научные инварианты (нет утечки, ограничения, табл. 9–10);
-                   test_loaders — проверка CSV; test_system — конвейер целиком и веб-экраны
+                   test_loaders — проверка CSV; test_analysis — правила интеграции и тесты значимости;
+                   test_system — конвейер целиком и веб-экраны
 docs/progress.md   состояние работ по ТЗ (docs/techspecs.md) и принятые допущения
 docs/methodology.md  соответствие кода статьям и известные расхождения
 scripts/make_screenshots.py  скриншоты интерфейса для презентации

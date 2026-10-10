@@ -85,8 +85,35 @@ PROFILES = {
     "aggressive":   InvestorProfile("aggressive", "Агрессивный", 0.80, 0.30, 0.65),
 }
 
-# Scenario multipliers of the risk budget (integration module).
+# --------------------------------------------------------------------------
+# Integration module - decision rules (Sec. 10 of docs/techspecs.md)
+# --------------------------------------------------------------------------
+# Scenario and cycle-phase multipliers of the risk budget.
 SCENARIO_RISK_MULT = {"base": 1.00, "bull": 1.10, "bear": 0.85, "stress": 0.60}
+PHASE_RISK_MULT = {"Расширение": 1.05, "Восстановление": 1.00, "Замедление": 0.92, "Спад": 0.75}
+
+
+@dataclass(frozen=True)
+class IntegrationRules:
+    """Coefficients of the integration rules; their sensitivity is analysed by
+    :func:`dss.integration.sensitivity_analysis`.
+
+    Rule 1: d = clip(d0 (1 - rec_penalty P_rec) k_scen k_phase - neg_growth_cut 1[g < 0], d_min, d_max)
+    Rule 2: h = clip(hedge_base + hedge_slope R_FX, 0, hedge_max)
+    """
+
+    rec_penalty: float = 0.60       # risky share falls by 60 % of P(recession)
+    neg_growth_cut: float = 0.05    # extra cut when the growth forecast is negative
+    hedge_base: float = 0.15        # USD share of the safe part in a calm FX regime
+    hedge_slope: float = 0.60       # extra USD share per unit of the FX risk index
+    hedge_max: float = 0.80
+    fx_risk_warn: float = 0.66      # FX risk index from which a warning is issued ("high" regime)
+    low_growth_warn: float = 1.0    # growth forecast, %, below which a warning is issued
+    scenario_mult: dict = field(default_factory=lambda: dict(SCENARIO_RISK_MULT))
+    phase_mult: dict = field(default_factory=lambda: dict(PHASE_RISK_MULT))
+
+
+RULES = IntegrationRules()
 
 
 @dataclass

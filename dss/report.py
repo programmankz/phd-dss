@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import config, plots
+from . import config, pipeline, plots
 
 CSS_PATH = Path(__file__).resolve().parents[1] / "webapp" / "static" / "style.css"
 
@@ -47,6 +47,8 @@ def build_report(r) -> str:
     src = "".join(f"<tr><td>{html.escape(k)}</td><td>{html.escape(v)}</td></tr>" for k, v in r.sources.items())
     warns = "".join(f"<div class='warn'>{html.escape(w)}</div>" for w in r.data_errors + d.warnings)
     m, f, c, s, b = r.macro, r.fx, r.clusters, r.signals, r.backtest
+    sig_sharpe, sig_dm = pipeline.significance_tables(r)
+    sens = pipeline.rule_sensitivity(r)
     body = f"""
 <main style="max-width:1180px;margin:0 auto">
 {demo}
@@ -69,6 +71,13 @@ def build_report(r) -> str:
 <h2><span class="rn m4">IV</span> Сигналы и бэктест</h2>
 {_img(plots.equity_curves(b.curves), 'бэктест')}
 <div class="grid g2"><div>{_tbl(b.metrics, 2, pct=('total_return', 'annual_return', 'annual_vol', 'max_drawdown', 'turnover'))}</div><div>{_tbl(s.metrics, 4)}</div></div>
+<h3>Статистическая значимость (ФТ-IV-13)</h3>
+<div class="grid g2"><div>{_tbl(sig_sharpe, 2)}<p class="note">Блочный бутстреп Шарпа: {r.sharpe_tests.attrs['n_boot']} повторов,
+блоки по {r.sharpe_tests.attrs['block']} дн.; p — гипотеза равенства Шарпа стратегии и {html.escape(r.sharpe_tests.attrs['reference'])}.</p></div>
+<div>{_tbl(sig_dm, 3)}<p class="note">Тест Диболда–Мариано против наивного прогноза r̂ = 0; DM &lt; 0 — модель точнее.</p></div></div>
+<h2>Чувствительность правил интеграции</h2>
+{_tbl(sens['coefficients'], 2, pct=('×0,5', '×0,75', '×1', '×1,25', '×1,5'))}
+{_tbl(sens['monotonicity'], 1)}
 <h2>Источники данных</h2><table class="src"><tbody>{src}</tbody></table>
 <p class="note">Отчёт носит аналитический характер и не является индивидуальной инвестиционной рекомендацией.</p>
 </main>"""

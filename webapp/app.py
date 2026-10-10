@@ -78,15 +78,16 @@ def fmt(v, kind="num", d=2):
 def table(df: pd.DataFrame, pct=(), d=3, index_name=None, highlight=None) -> str:
     """DataFrame -> HTML table with Russian number formatting."""
     cols = list(df.columns)
-    head = f"<th>{index_name or (df.index.name or '')}</th>" + "".join(f"<th>{c}</th>" for c in cols)
+    esc = html.escape
+    head = f"<th>{esc(str(index_name or (df.index.name or '')))}</th>" + "".join(f"<th>{esc(str(c))}</th>" for c in cols)
     rows = []
     for idx, r in df.iterrows():
         cls = ' class="hl"' if highlight is not None and idx == highlight else ""
         cells = "".join(
             f'<td class="num">{fmt(r[c], "pct" if c in pct else "num", 1 if c in pct else d)}</td>'
-            if isinstance(r[c], (int, float, np.integer, np.floating)) else f"<td>{r[c]}</td>"
+            if isinstance(r[c], (int, float, np.integer, np.floating)) else f"<td>{esc(str(r[c]))}</td>"
             for c in cols)
-        rows.append(f"<tr{cls}><th scope='row'>{idx}</th>{cells}</tr>")
+        rows.append(f"<tr{cls}><th scope='row'>{esc(str(idx))}</th>{cells}</tr>")
     return f'<div class="tbl"><table><thead><tr>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
 
 
@@ -110,6 +111,10 @@ def decision():
     a = a[a["weight"] > 0.0005]
     c["alloc_table"] = pd.DataFrame({"Вес": a["weight"], "Сигнал s": a["signal"], "Кластер": a["cluster"]})
     c["img_kz"] = plots.kz_forecast(r.macro, r.settings.scenario)
+    sens = pipeline.rule_sensitivity(r)
+    grid = sens["risk_grid"].copy()
+    grid.index = [fmt(float(v), "pct", 0) for v in grid.index]
+    c["sens"], c["sens_grid"] = sens, grid
     return render_template("decision.html", **c)
 
 
@@ -166,6 +171,7 @@ def signals_page():
     c["img_curves"] = plots.equity_curves(r.backtest.curves)
     c["img_ranks"] = plots.rank_signals(r.signals.latest)
     c["img_ic"] = plots.model_ic(r.signals.metrics)
+    c["sig_sharpe"], c["sig_dm"] = pipeline.significance_tables(r, fmt=lambda v: fmt(v, "num", 2))
     return render_template("signals.html", **c)
 
 
