@@ -6,6 +6,10 @@
 <div class="tbl"><table class="src"><thead><tr><th>Набор</th><th>Текущий источник</th></tr></thead><tbody>
 {% for k, v in r.sources.items() %}<tr><td>{{ k }}</td><td>{{ v }}{% if v.startswith('DEMO') %} <b style="color:#B03A48">— синтетика</b>{% endif %}</td></tr>{% endfor %}
 </tbody></table></div>
+{% if r.data_errors %}
+<h2>Файлы с ошибками</h2>
+<ul>{% for e in r.data_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+{% endif %}
 <h2>Как подключить реальные данные</h2>
 <pre>python -m dss.cli fetch gdp        # IMF WEO DataMapper → data/gdp_growth.csv
 python -m dss.cli fetch fx         # НБ РК, дневные курсы → data/fx_rates.csv (долго, с докачкой)
@@ -18,5 +22,9 @@ python -m dss.cli warmup           # предварительный расчёт
 <tr><td><code>fundamentals_kase.csv</code></td><td>ticker, sector, PB, PE</td><td>III</td></tr>
 <tr><td><code>prices_nse.csv</code></td><td>Date, HDFCBANK.NS, … — цены закрытия</td><td>III, IV</td></tr>
 </tbody></table>
+<p class="note">Требования к файлам: даты в формате ГГГГ-ММ-ДД (или ДД.ММ.ГГГГ), дробная часть через точку,
+цены и курсы положительные; в ценах — не меньше 6 бумаг и 300 торговых дней, в курсах — не меньше 5 лет истории,
+в панели ВВП — строка Kazakhstan и годы по обе стороны 2014 г. Файл с ошибкой не останавливает расчёт:
+для этого набора временно используются демо-данные.</p>
 <p class="note">После замены файлов нажмите <a href="/refresh?{{ qs }}">«Сбросить кэш и пересчитать»</a>.</p>
 {% endblock %}

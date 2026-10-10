@@ -66,6 +66,8 @@ def main(argv=None) -> int:
         return 0
 
     r = pipeline.run(_settings(a))
+    for e in r.data_errors:
+        print("!! Ошибка данных: " + e, file=sys.stderr)
     if a.cmd == "warmup":
         print("Кэш готов.", "Источники:", *(f"  {k}: {v}" for k, v in r.sources.items()), sep="\n")
     elif a.cmd == "decide":

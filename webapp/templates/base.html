@@ -28,6 +28,7 @@
     {% if r.is_demo %}
     <div class="demo" role="status"><b>Демо-режим.</b> Часть данных синтетическая (см. «Данные»). Результаты иллюстрируют работу системы и не являются эмпирическими выводами.</div>
     {% endif %}
+    {% for e in r.data_errors %}<div class="warn" role="alert"><b>Ошибка данных.</b> {{ e }}</div>{% endfor %}
     <form class="controls" method="get" action="{{ request.path }}">
       <label>Профиль инвестора
         <select name="profile">{% for k, p in config.PROFILES.items() %}<option value="{{ k }}" {{ 'selected' if raw.profile==k }}>{{ p.label }}</option>{% endfor %}</select></label>

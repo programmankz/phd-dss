@@ -4,6 +4,7 @@ Run:  python -m webapp.app            -> http://127.0.0.1:8050
 """
 from __future__ import annotations
 
+import html
 import os
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from flask import Flask, Response, render_template, request
+from werkzeug.exceptions import HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -189,8 +191,24 @@ def refresh():
     return decision()
 
 
+@app.errorhandler(Exception)
+def internal_error(exc):
+    """Unexpected failure: a readable cause and action instead of a bare 500 page."""
+    if isinstance(exc, HTTPException):
+        return exc
+    app.logger.exception("request failed")
+    body = (f"<!doctype html><html lang='ru'><head><meta charset='utf-8'><title>Ошибка расчёта — СППР</title>"
+            f"<link rel='stylesheet' href='/static/style.css'></head><body><main style='max-width:760px;margin:40px auto'>"
+            f"<h1>Не удалось выполнить расчёт</h1>"
+            f"<div class='warn' role='alert'>{html.escape(type(exc).__name__)}: {html.escape(str(exc))}</div>"
+            f"<p>Что сделать: проверьте файлы на странице «Данные», затем "
+            f"<a href='/refresh'>сбросьте кэш и пересчитайте</a>. Если ошибка повторяется, запустите "
+            f"<code>python -m dss.cli decide</code> — подробности будут в консоли.</p></main></body></html>")
+    return Response(body, status=500, mimetype="text/html")
+
+
 def main():
-    port = int(os.environ.get("PORT", 8050))
+    port = int(os.environ.get("PORT", "8050"))
     app.run(host=os.environ.get("HOST", "127.0.0.1"), port=port, debug=False)
 
 

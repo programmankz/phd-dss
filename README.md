@@ -1,5 +1,7 @@
 # СППР управления инвестиционным портфелем
 
+[![CI](https://github.com/programmankz/phd-dss/actions/workflows/ci.yml/badge.svg)](https://github.com/programmankz/phd-dss/actions/workflows/ci.yml)
+
 Программная реализация диссертационного исследования **Дурбенова Р.М.** «Система поддержки принятия решений при управлении инвестиционным портфелем» (PhD, 8D06103 «Информационные системы», ЕНУ им. Л.Н. Гумилёва).
 
 *Decision support system for investment portfolio management: a four-module ML pipeline (macro forecasting, tenge FX risk, asset clustering, signal-based portfolio optimisation) with an integration module and a Russian-language web interface.*
@@ -18,15 +20,35 @@
 
 ## Быстрый старт
 
+Нужен Python 3.10 или новее ([python.org](https://www.python.org/downloads/)).
+
+**Linux / macOS** (Terminal):
+
 ```bash
 git clone https://github.com/programmankz/phd-dss.git
 cd phd-dss
-python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-python -m dss.cli warmup        # первый расчёт всех модулей (~1 мин), дальше — из кэша
-python -m webapp.app            # веб-интерфейс: http://127.0.0.1:8050
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install -r requirements-lock.txt    # точные версии; на Python 3.10–3.11: requirements.txt
 ```
+
+**Windows** (PowerShell):
+
+```powershell
+git clone https://github.com/programmankz/phd-dss.git
+cd phd-dss
+py -m venv .venv
+.venv\Scripts\Activate.ps1     # если запрещён запуск скриптов: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+python -m pip install -r requirements-lock.txt    # на Python 3.10–3.11: requirements.txt
+```
+
+Затем на любой ОС:
+
+```bash
+python -m dss.cli warmup        # первый расчёт всех модулей (~1 мин), дальше — из кэша
+python -m dss.cli serve         # веб-интерфейс: http://127.0.0.1:8050  (то же: python -m webapp.app)
+```
+
+`requirements-lock.txt` фиксирует точные версии всех пакетов (воспроизводимость до 4-го знака, НФТ-01) и требует Python ≥ 3.12; `requirements.txt` задаёт допустимые диапазоны версий.
 
 Без файлов данных система работает в **демо-режиме** на синтетических данных: это видно по жёлтой плашке на каждой странице. Результаты демо-режима не являются эмпирическими выводами.
 
@@ -35,12 +57,23 @@ python -m webapp.app            # веб-интерфейс: http://127.0.0.1:80
 ```bash
 python -m dss.cli decide --profile conservative --scenario stress   # рекомендация в консоли
 python -m dss.cli report -o report.html                              # автономный HTML-отчёт
-python tests/run.py                                                  # тесты (или: pytest -q)
 ```
+
+## Тесты и проверка стиля
+
+```bash
+python -m pytest -q             # все тесты, ≈ 1 мин (полный расчёт конвейера на демо-наборе)
+python tests/run.py             # то же без pytest
+ruff check .                    # проверка стиля (pip install ruff)
+```
+
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) на каждый push запускает ruff и тесты на Linux, Windows и macOS (Python 3.12, версии из lock-файла) и на Python 3.10 (диапазоны из `requirements.txt`).
 
 ## Данные
 
 Положите CSV в папку `data/` (или укажите другую через `DSS_DATA_DIR`) и нажмите в интерфейсе «Данные → Сбросить кэш».
+
+Файлы проверяются при загрузке. Даты — `ГГГГ-ММ-ДД` (или `ДД.ММ.ГГГГ`, как в выгрузке kase.kz), дробная часть — через точку, цены и курсы — положительные; в ценах нужно не меньше 6 бумаг и 300 торговых дней, в курсах — все четыре валюты и не меньше 5 лет истории, в панели ВВП — строка `Kazakhstan` и годы по обе стороны 2014 г. Файл с ошибкой не останавливает расчёт: система показывает причину и действие (например, «Файл prices_kase.csv: нет столбца Date — проверьте заголовок…») на каждом экране, в отчёте и в консоли, а для этого набора временно берёт демо-данные.
 
 | Файл | Формат | Источник | Модуль |
 |---|---|---|---|
@@ -65,7 +98,9 @@ dss/
   pipeline.py      оркестрация и кэш
   plots.py, report.py, cli.py
 webapp/            Flask-интерфейс (6 страниц)
-tests/             13 тестов научных инвариантов (нет утечки, ограничения, табл. 9–10)
+tests/             test_core — научные инварианты (нет утечки, ограничения, табл. 9–10);
+                   test_loaders — проверка CSV; test_system — конвейер целиком и веб-экраны
+docs/progress.md   состояние работ по ТЗ (docs/techspecs.md) и принятые допущения
 docs/methodology.md  соответствие кода статьям и известные расхождения
 scripts/make_screenshots.py  скриншоты интерфейса для презентации
 ```
