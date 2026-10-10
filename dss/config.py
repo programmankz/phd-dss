@@ -62,7 +62,19 @@ FX_MOMENTUM_WINDOW = 60  # days
 LOOKBACK = 60            # sliding window, trading days
 SMOOTHING = 10           # average of the last 10 predictions
 COV_WINDOW = 252         # rolling covariance window, annualised x252
-TRAIN_SHARE = 0.80       # chronological 80/20 split
+TRAIN_SHARE = 0.80       # chronological 80/20 split ("paper" protocol, [A4])
+WF_INITIAL_TRAIN = 0.50  # walk-forward: first training window, share of dates
+WF_RETRAIN_EVERY = 126   # walk-forward: retrain every 126 trading days (half a year)
+
+# Evaluation protocols of Module IV (FR-IV-04): (train share, retrain every N days; 0 = never)
+PROTOCOLS = {
+    "walk_forward": {"label": "Walk-forward (переобучение раз в 126 дн.)",
+                     "train_share": WF_INITIAL_TRAIN, "retrain_every": WF_RETRAIN_EVERY},
+    "paper":        {"label": "Как в статье [A4]: одно разбиение 80/20",
+                     "train_share": TRAIN_SHARE, "retrain_every": 0},
+}
+# One-click reproduction of the [A4] experiment (scenario 6 of the spec)
+PAPER_PRESET = {"protocol": "paper", "cov": "sample", "rebalance": "D", "tc": "0", "caps": "0"}
 RISK_FREE = 0.05         # reproduces the Sharpe ratios of [A4] Table IV
 
 
@@ -129,9 +141,11 @@ class Settings:
     cov_method: str = "ledoit_wolf"      # "sample" reproduces [A4]
     use_fuzzy_caps: bool = False
     risk_free: float = RISK_FREE
+    protocol: str = "walk_forward"       # Module IV evaluation: "walk_forward" | "paper" (80/20)
+    backtest_caps: bool = True           # False: only 0 <= w_i <= 1 in the backtest, as in [A4]
     extra: dict = field(default_factory=dict)
 
     def key(self) -> tuple:
         return (self.profile, self.scenario, self.universe, tuple(self.models),
                 self.rebalance, float(self.tc_bps), self.cov_method,
-                bool(self.use_fuzzy_caps), float(self.risk_free))
+                bool(self.use_fuzzy_caps), float(self.risk_free), self.protocol, bool(self.backtest_caps))

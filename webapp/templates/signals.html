@@ -14,7 +14,7 @@
 <h2>Бэктест</h2>
 <figure class="fig panel"><img alt="Кривые" src="data:image/png;base64,{{ img_curves }}"></figure>
 {{ table(b.metrics.rename(columns={'total_return':'Доходность','annual_return':'Годовая','annual_vol':'Волатильность','sharpe':'Шарп','max_drawdown':'Макс. просадка','turnover':'Оборот за ребаланс.'}), pct=('Доходность','Годовая','Волатильность','Макс. просадка','Оборот за ребаланс.'), d=2, index_name='Стратегия', highlight='Max Signal-to-Risk') | safe }}
-<p class="note">Ребалансировка: {{ REBALANCE[raw.rebalance] }}; издержки {{ raw.tc }} б.п. от оборота; ковариация {{ st.cov_method }}, окно 252 дня; лимиты профиля «{{ config.PROFILES[st.profile].label }}» применяются к Max Signal-to-Risk и Min Variance. Безрисковая ставка {{ fmt(st.risk_free, 'pct', 0) }}.</p>
+<p class="note">Протокол оценки: {{ config.PROTOCOLS[st.protocol].label }}. Ребалансировка: {{ REBALANCE[raw.rebalance] }}; издержки {{ raw.tc }} б.п. от оборота; ковариация {{ st.cov_method }}, окно 252 дня; {% if st.backtest_caps %}лимиты профиля «{{ config.PROFILES[st.profile].label }}» применяются ко всем стратегиям, кроме Equal Weighted (лимиты кластеров — к Max Signal-to-Risk и Min Variance){% else %}лимитов нет, только 0 ≤ wᵢ ≤ 1, как в [A4]{% endif %}. Безрисковая ставка {{ fmt(st.risk_free, 'pct', 0) }}.</p>
 <h2>Статистическая значимость</h2>
 <div class="grid g2">
   <div>

@@ -56,6 +56,8 @@ python -m dss.cli serve         # веб-интерфейс: http://127.0.0.1:80
 
 ```bash
 python -m dss.cli decide --profile conservative --scenario stress   # рекомендация в консоли
+python -m dss.cli significance --universe nse --protocol paper --cov sample --rebalance D --tc 0 --no-caps
+                                     # эксперимент [A4] «как в статье» (в интерфейсе — кнопка «Параметры статьи [A4]»)
 python -m dss.cli report -o report.html                              # автономный HTML-отчёт
 python -m dss.cli significance       # 95% ДИ Шарпа стратегий и тест Диболда–Мариано (ФТ-IV-13)
 python -m dss.cli sensitivity        # чувствительность и монотонность правил интеграции

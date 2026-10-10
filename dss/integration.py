@@ -139,7 +139,8 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
     top = ", ".join(f"{a} {v:.0%}" for a, v in wr.head(3).items())
     steps.append({"module": "IV", "title": "Ранговые сигналы → веса (max сигнал/риск)",
                   "facts": [f"модели: {', '.join(signals.models)}; сглаживание 10; s = Rank/N",
-                            f"IC ансамбля вне выборки = {signals.metrics.iloc[-1]['IC']:.3f}",
+                            f"IC ансамбля вне выборки = {signals.metrics.iloc[-1]['IC']:.3f} "
+                            f"(протокол: {config.PROTOCOLS[settings.protocol]['label']})",
                             f"ковариация: {settings.cov_method}, окно {config.COV_WINDOW} дн."],
                   "result": f"крупнейшие позиции: {top}", "trail": []})
     ic = signals.metrics.iloc[-1]["IC"]

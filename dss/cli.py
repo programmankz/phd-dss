@@ -22,7 +22,8 @@ from .data import loaders
 def _settings(a) -> config.Settings:
     return config.Settings(profile=a.profile, scenario=a.scenario, universe=a.universe,
                            models=tuple(a.models.split(",")), rebalance=a.rebalance,
-                           tc_bps=a.tc, cov_method=a.cov, use_fuzzy_caps=a.fuzzy)
+                           tc_bps=a.tc, cov_method=a.cov, use_fuzzy_caps=a.fuzzy,
+                           protocol=a.protocol, backtest_caps=a.caps)
 
 
 def main(argv=None) -> int:
@@ -41,6 +42,10 @@ def main(argv=None) -> int:
         s.add_argument("--tc", type=float, default=10.0)
         s.add_argument("--cov", default="ledoit_wolf", choices=["ledoit_wolf", "sample"])
         s.add_argument("--fuzzy", action="store_true")
+        s.add_argument("--protocol", default="walk_forward", choices=list(config.PROTOCOLS),
+                       help="walk_forward или paper (одно разбиение 80/20, как в [A4])")
+        s.add_argument("--no-caps", dest="caps", action="store_false",
+                       help="бэктест без лимитов профиля и кластеров (0 ≤ w ≤ 1, как в [A4])")
         if name == "report":
             s.add_argument("-o", "--output", default="dss_report.html")
     sub.add_parser("serve")
