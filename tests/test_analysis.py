@@ -122,3 +122,19 @@ def test_forecast_tests_against_naive_forecast():
     assert out.loc["Оракул", "verdict"] == "точнее наивного" and out.loc["Оракул", "dm"] < 0
     assert out.loc["noise", "verdict"] == "хуже наивного"
     assert out.loc["Оракул", "n_days"] == len(target)
+
+
+# ---------------------------------------------------------------- evaluation protocol (FR-IV-04)
+def test_paper_protocol_is_one_chronological_split():
+    from dss import signals
+    rng = np.random.default_rng(6)
+    idx = pd.bdate_range("2021-01-04", periods=400)
+    prices = pd.DataFrame(100 * np.exp(np.cumsum(rng.normal(0, 0.01, (400, 4)), axis=0)), index=idx,
+                          columns=list("abcd"))
+    p = config.PROTOCOLS["paper"]
+    r = signals.run(prices, ("ridge",), p["train_share"], p["retrain_every"])
+    dates = r.predictions["ridge"].index
+    assert np.isclose((dates[0] - idx[0]).days / (idx[-1] - idx[0]).days, 0.8, atol=0.05)
+    assert r.predictions["ridge"].index.is_monotonic_increasing and len(dates) > 50
+    wf = config.PROTOCOLS["walk_forward"]
+    assert (wf["train_share"], wf["retrain_every"]) == (0.5, 126) and p["retrain_every"] == 0

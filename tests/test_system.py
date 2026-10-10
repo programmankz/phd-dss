@@ -6,6 +6,7 @@ its cache. Run with pytest (``pytest -q``) or ``python tests/run.py``.
 """
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -58,9 +59,26 @@ def test_full_pipeline_on_demo_data():
 def test_profile_change_reuses_module_results():
     with isolated():
         a = pipeline.run(config.Settings(profile="moderate", scenario="base"))
+        t0 = time.perf_counter()
         b = pipeline.run(config.Settings(profile="conservative", scenario="stress"))
+        elapsed = time.perf_counter() - t0
     assert a.macro is b.macro and a.fx is b.fx and a.signals is b.signals      # served from cache
     assert b.decision.risky_share < a.decision.risky_share                       # monotone in risk
+    # NFR-03: only the integration step re-runs; the profile-dependent backtest waits for its screen
+    assert "backtest" not in b.__dict__ and elapsed < 5, f"{elapsed:.1f} s"
+
+
+def test_paper_protocol_reproduces_the_a4_setup():
+    st = config.Settings(protocol="paper", cov_method="sample", rebalance="D", tc_bps=0, backtest_caps=False)
+    with isolated():
+        r = pipeline.run(st)
+        wf = pipeline.run(config.Settings())
+    share = (r.prices.index < r.signals.test_start).mean()
+    assert 0.78 <= share <= 0.85                         # single chronological 80/20 split
+    assert r.signals.test_start > wf.signals.test_start and r.signals is not wf.signals
+    assert r.backtest.daily.index[0] >= r.signals.test_start and len(r.backtest.daily) < len(wf.backtest.daily)
+    assert r.backtest.weights_last.to_numpy().max() <= 1 + 1e-9
+    assert "80/20" in r.decision.steps[3]["facts"][1]
 
 
 def test_broken_file_does_not_stop_other_modules():
@@ -91,8 +109,10 @@ def test_all_web_screens_return_200():
             assert "Демо-режим" in resp.get_data(as_text=True), url
         assert "Чувствительность правил интеграции" in c.get("/").get_data(as_text=True)
         assert "Диболда–Мариано" in c.get("/signals").get_data(as_text=True)
-        resp = c.get("/?profile=aggressive&scenario=bull&rebalance=M&tc=abc&models=bogus")
+        resp = c.get("/?profile=aggressive&scenario=bull&rebalance=M&tc=abc&models=bogus&protocol=x&caps=?")
         assert resp.status_code == 200                       # bad query values fall back to defaults
+        home = c.get("/").get_data(as_text=True)
+        assert "Параметры статьи [A4]" in home and "protocol=paper" in home and "caps=0" in home
 
 
 def test_web_shows_data_error_text():

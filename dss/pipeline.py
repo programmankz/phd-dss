@@ -14,12 +14,13 @@ import hashlib
 import os
 import pickle
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 
 import pandas as pd
 
 from . import clustering, fx, integration, macro, portfolio, significance, signals
-from .config import PROFILES, Settings
+from .config import PROFILES, PROTOCOLS, Settings
 from .data import DataError, load_fundamentals, load_fx, load_gdp, load_prices
 
 CACHE_DIR = Path(os.environ.get("DSS_CACHE_DIR", ".dss_cache"))
@@ -68,13 +69,24 @@ class RunResult:
     clusters: clustering.ClusterResult
     cluster_table: pd.DataFrame
     signals: signals.SignalResult
-    backtest: portfolio.BacktestResult
     decision: integration.Decision
     prices: pd.DataFrame
     sectors: pd.Series
     data_errors: list = field(default_factory=list)   # user-facing messages, one per broken file
-    sharpe_tests: pd.DataFrame | None = None          # FR-IV-13: bootstrap CI of Sharpe ratios
     forecast_tests: pd.DataFrame | None = None        # FR-IV-13: Diebold-Mariano vs naive forecast
+    deferred: dict = field(default_factory=dict, repr=False)
+
+    # The backtest depends on the profile limits but the decision does not need it,
+    # so it runs only when a screen shows it: a profile change re-runs integration only (NFR-03).
+    @cached_property
+    def backtest(self) -> portfolio.BacktestResult:
+        return self.deferred["backtest"]()
+
+    @cached_property
+    def sharpe_tests(self) -> pd.DataFrame:
+        """FR-IV-13: bootstrap CI of the Sharpe ratios of the backtested strategies."""
+        return cached("sharpe_tests", _fingerprint(self.backtest.daily, self.settings.risk_free),
+                      lambda: significance.sharpe_tests(self.backtest.daily, self.settings.risk_free))
 
 
 def _load(errors: list, loader, *args):
@@ -105,25 +117,28 @@ def run(settings: Settings | None = None) -> RunResult:
     ct = cached("cluster_bt", _fingerprint(prices, c.k, st.tc_bps, st.risk_free),
                 lambda: clustering.cluster_portfolio_backtest(prices, c.k, tc_bps=st.tc_bps,
                                                               risk_free=st.risk_free))
-    s = cached("signals", _fingerprint(prices, st.models), lambda: signals.run(prices, st.models))
+    proto = PROTOCOLS[st.protocol]
+    s = cached("signals", _fingerprint(prices, st.models, proto),
+               lambda: signals.run(prices, st.models, proto["train_share"], proto["retrain_every"]))
     prof = PROFILES[st.profile]
-    labels = c.labels["K-medoids"].reindex(prices.columns).to_numpy()
-    U = c.U.reindex(prices.columns).to_numpy() if st.use_fuzzy_caps else None
-    bt = cached("backtest", _fingerprint(prices, st.models, st.rebalance, st.tc_bps, st.cov_method,
-                                         prof.max_asset_weight, prof.cluster_cap, st.use_fuzzy_caps, st.risk_free),
-                lambda: portfolio.backtest(prices, s.ranks, st.rebalance, st.tc_bps, st.cov_method,
-                                           prof.max_asset_weight, labels, U, prof.cluster_cap,
-                                           risk_free=st.risk_free))
-    sh = cached("sharpe_tests", _fingerprint(bt.daily, st.risk_free),
-                lambda: significance.sharpe_tests(bt.daily, st.risk_free))
-    dm = cached("forecast_tests", _fingerprint(prices, st.models),
+    if st.backtest_caps:
+        labels = c.labels["K-medoids"].reindex(prices.columns).to_numpy()
+        U = c.U.reindex(prices.columns).to_numpy() if st.use_fuzzy_caps else None
+        limits = (prof.max_asset_weight, labels, U, prof.cluster_cap)
+        lkey = (prof.max_asset_weight, prof.cluster_cap, st.use_fuzzy_caps)
+    else:                                    # [A4]: only 0 <= w_i <= 1
+        limits, lkey = (1.0, None, None, None), None
+    bt_key = _fingerprint(prices, st.models, proto, st.rebalance, st.tc_bps, st.cov_method, lkey, st.risk_free)
+    deferred = {"backtest": lambda: cached("backtest", bt_key, lambda: portfolio.backtest(
+        prices, s.ranks, st.rebalance, st.tc_bps, st.cov_method, *limits, risk_free=st.risk_free))}
+    dm = cached("forecast_tests", _fingerprint(prices, st.models, proto),
                 lambda: significance.forecast_tests(s.predictions, prices, signals.MODEL_LABELS))
     sectors = fund.frame["sector"] if "sector" in fund.frame else pd.Series(dtype=str)
     d = integration.decide(m, f, c, s, prices, st, sectors)
     sources = {"ВВП (Модуль I)": gdp.source, "Курсы (Модуль II)": rates.source,
                "Цены (Модули III–IV)": px.source, "Фундаментальные (Модуль III)": fund.source}
     is_demo = gdp.is_demo or rates.is_demo or px.is_demo
-    return RunResult(st, sources, is_demo, m, f, c, ct, s, bt, d, prices, sectors, errors, sh, dm)
+    return RunResult(st, sources, is_demo, m, f, c, ct, s, d, prices, sectors, errors, dm, deferred)
 
 
 def clear_cache():
