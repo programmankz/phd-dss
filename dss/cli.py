@@ -4,6 +4,8 @@
     python -m dss.cli warmup               compute and cache all modules
     python -m dss.cli decide [options]     print the recommendation
     python -m dss.cli report -o out.html   write the HTML report
+    python -m dss.cli sensitivity          sensitivity of the integration rules
+    python -m dss.cli significance         bootstrap Sharpe CIs and Diebold-Mariano tests
     python -m dss.cli serve                start the web interface
 """
 from __future__ import annotations
@@ -20,7 +22,8 @@ from .data import loaders
 def _settings(a) -> config.Settings:
     return config.Settings(profile=a.profile, scenario=a.scenario, universe=a.universe,
                            models=tuple(a.models.split(",")), rebalance=a.rebalance,
-                           tc_bps=a.tc, cov_method=a.cov, use_fuzzy_caps=a.fuzzy)
+                           tc_bps=a.tc, cov_method=a.cov, use_fuzzy_caps=a.fuzzy,
+                           protocol=a.protocol, backtest_caps=a.caps)
 
 
 def main(argv=None) -> int:
@@ -29,7 +32,7 @@ def main(argv=None) -> int:
     f = sub.add_parser("fetch", help="загрузить реальные данные")
     f.add_argument("what", choices=["gdp", "fx", "nse"])
     f.add_argument("--start", default=None)
-    for name in ("warmup", "decide", "report"):
+    for name in ("warmup", "decide", "report", "sensitivity", "significance"):
         s = sub.add_parser(name)
         s.add_argument("--profile", default="moderate", choices=list(config.PROFILES))
         s.add_argument("--scenario", default="base", choices=list(config.SCENARIOS))
@@ -39,6 +42,10 @@ def main(argv=None) -> int:
         s.add_argument("--tc", type=float, default=10.0)
         s.add_argument("--cov", default="ledoit_wolf", choices=["ledoit_wolf", "sample"])
         s.add_argument("--fuzzy", action="store_true")
+        s.add_argument("--protocol", default="walk_forward", choices=list(config.PROTOCOLS),
+                       help="walk_forward или paper (одно разбиение 80/20, как в [A4])")
+        s.add_argument("--no-caps", dest="caps", action="store_false",
+                       help="бэктест без лимитов профиля и кластеров (0 ≤ w ≤ 1, как в [A4])")
         if name == "report":
             s.add_argument("-o", "--output", default="dss_report.html")
     sub.add_parser("serve")
@@ -85,6 +92,23 @@ def main(argv=None) -> int:
             print(d.allocation[d.allocation.weight > 0.0005][["weight", "signal", "cluster"]].round(3))
         for w in d.warnings:
             print("! " + w)
+    elif a.cmd == "sensitivity":
+        sens = pipeline.rule_sensitivity(r)
+        with pd.option_context("display.width", 200, "display.max_columns", 20, "display.max_colwidth", 70):
+            print("Чувствительность к коэффициентам (выход — доля рисковых активов или USD-хедж):")
+            print(sens["coefficients"].to_string(float_format=lambda v: f"{v:.3f}"), "\n")
+            print("Монотонность правил:")
+            print(sens["monotonicity"].to_string(float_format=lambda v: f"{v:.1f}"), "\n")
+            print(f"Доля рисковых активов по P(рецессии) и сценарию (фаза «{r.macro.phase}»):")
+            print(sens["risk_grid"].to_string(float_format=lambda v: f"{v:.3f}"))
+    elif a.cmd == "significance":
+        sharpe, dm = pipeline.significance_tables(r)
+        with pd.option_context("display.width", 200, "display.max_columns", 20):
+            print(f"Шарп стратегий, блочный бутстреп ({r.sharpe_tests.attrs['n_boot']} повторов, "
+                  f"блоки {r.sharpe_tests.attrs['block']} дн.):")
+            print(sharpe.to_string(float_format=lambda v: f"{v:.3f}"), "\n")
+            print("Диболд–Мариано против наивного прогноза r̂ = 0 (DM < 0 — модель точнее):")
+            print(dm.to_string(float_format=lambda v: f"{v:.3f}"))
     else:
         from .report import build_report
         with open(a.output, "w", encoding="utf-8") as fh:

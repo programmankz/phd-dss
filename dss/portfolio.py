@@ -72,7 +72,9 @@ def _group_constraints(n, groups=None, U=None, cap=None):
     return cons
 
 
-def _solve(obj, n, w_max, groups, U, cap):
+def _solve(obj, n, w_max, groups, U, cap) -> tuple[np.ndarray, bool]:
+    """SLSQP from a feasible start; if it fails, the feasible start itself is
+    returned (a valid portfolio) together with ``ok=False``."""
     if U is None and groups is not None:
         w_max, cap_eff, _ = feasible_limits(groups, w_max, cap)
     else:
@@ -83,18 +85,20 @@ def _solve(obj, n, w_max, groups, U, cap):
                    options={"maxiter": 500, "ftol": 1e-12})
     ok = res.success and all(c["fun"](res.x) >= -1e-6 for c in cons if c["type"] == "ineq")
     w = np.clip(res.x if ok else x0, 0, None)
-    return w / w.sum()
+    return w / w.sum(), bool(ok)
 
 
-def max_signal_to_risk(s, cov, w_max=1.0, groups=None, U=None, cluster_cap=None):
+def max_signal_to_risk(s, cov, w_max=1.0, groups=None, U=None, cluster_cap=None, return_ok=False):
+    """Weights maximising w's / sqrt(w'Sigma w); with ``return_ok`` also whether SLSQP converged."""
     s, cov = np.asarray(s, float), np.asarray(cov, float)
     obj = lambda w: -(w @ s) / np.sqrt(max(w @ cov @ w, 1e-12))
-    return _solve(obj, len(s), w_max, groups, U, cluster_cap)
+    w, ok = _solve(obj, len(s), w_max, groups, U, cluster_cap)
+    return (w, ok) if return_ok else w
 
 
 def min_variance(cov, w_max=1.0, groups=None, U=None, cluster_cap=None):
     cov = np.asarray(cov, float)
-    return _solve(lambda w: w @ cov @ w, len(cov), w_max, groups, U, cluster_cap)
+    return _solve(lambda w: w @ cov @ w, len(cov), w_max, groups, U, cluster_cap)[0]
 
 
 def signal_weighted(s, w_max=1.0):

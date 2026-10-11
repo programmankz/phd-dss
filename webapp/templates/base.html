@@ -48,7 +48,12 @@
       <label>Ковариация
         <select name="cov"><option value="ledoit_wolf" {{ 'selected' if raw.cov=='ledoit_wolf' }}>Ledoit–Wolf</option><option value="sample" {{ 'selected' if raw.cov=='sample' }}>Выборочная (как в [A4])</option></select></label>
       <label class="chk"><input type="checkbox" name="fuzzy" value="1" {{ 'checked' if raw.fuzzy=='1' }}>Лимиты по матрице U (FCM)</label>
+      <label>Протокол оценки (Модуль IV)
+        <select name="protocol">{% for k, p in config.PROTOCOLS.items() %}<option value="{{ k }}" {{ 'selected' if raw.protocol==k }}>{{ p.label }}</option>{% endfor %}</select></label>
+      <label>Лимиты в бэктесте
+        <select name="caps"><option value="1" {{ 'selected' if raw.caps=='1' }}>профиля и кластеров</option><option value="0" {{ 'selected' if raw.caps=='0' }}>только 0 ≤ w ≤ 1 (как в [A4])</option></select></label>
       <button class="btn" type="submit">Пересчитать</button>
+      <a class="btn ghost" href="{{ request.path }}?{{ paper_qs }}" title="Одно разбиение 80/20, выборочная ковариация, ежедневная ребалансировка, без издержек и лимитов">Параметры статьи [A4]</a>
     </form>
     {% block content %}{% endblock %}
   </main>
