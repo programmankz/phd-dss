@@ -45,8 +45,11 @@ NSE_TICKERS = [
     "TCS.NS", "INFY.NS", "HCLTECH.NS", "WIPRO.NS",
     "RELIANCE.NS", "ONGC.NS", "NTPC.NS", "BPCL.NS",
     "BRITANNIA.NS", "ITC.NS", "NESTLEIND.NS", "TATACONSUM.NS",
-    "TATAMOTORS.NS", "MARUTI.NS", "M&M.NS", "BAJAJ-AUTO.NS",
-]  # [A4] Table II
+    "TMPV.NS", "MARUTI.NS", "M&M.NS", "BAJAJ-AUTO.NS",
+]  # [A4] Table II; TATAMOTORS.NS was renamed TMPV.NS after the Oct 2025 demerger (history kept)
+# Demergers Yahoo does not adjust for: {ticker: first ex-date}. TMCV.NS (commercial vehicles)
+# was spun off from Tata Motors on 2025-10-14; the raw close drops ~40% that day.
+NSE_DEMERGERS = {"TMPV.NS": "2025-10-14"}
 NSE_SECTORS = dict(zip(NSE_TICKERS, ["Финансы"] * 4 + ["IT"] * 4 + ["Энергетика"] * 4 +
                        ["Потребительский"] * 4 + ["Авто"] * 4))
 
@@ -322,4 +325,18 @@ def fetch_yahoo(tickers, start: str = "2020-01-01", end: str | None = None) -> p
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise RuntimeError("pip install yfinance") from exc
     px = yf.download(list(tickers), start=start, end=end, auto_adjust=True, progress=False)["Close"]
-    return px.ffill().dropna(how="all")
+    px = px.ffill().dropna(axis=1, how="all").dropna(how="all")  # drop tickers Yahoo no longer has
+    return adjust_demergers(px, NSE_DEMERGERS)
+
+
+def adjust_demergers(px: pd.DataFrame, events: dict) -> pd.DataFrame:
+    """Back-adjust prices before each ex-date by the observed close ratio, so the spin-off
+    is not a loss. That day's market move is lost too (ratio method, as for unpaid dividends)."""
+    px = px.copy()
+    for ticker, ex in events.items():
+        ex = pd.Timestamp(ex)
+        if ticker not in px or not (px.index[0] < ex <= px.index[-1]):
+            continue
+        before, after = px.loc[px.index < ex, ticker], px.loc[px.index >= ex, ticker]
+        px.loc[px.index < ex, ticker] = before * (after.iloc[0] / before.iloc[-1])
+    return px
