@@ -41,6 +41,8 @@ def settings_from_request() -> tuple[config.Settings, dict]:
         "tc": a.get("tc", "10"),
         "cov": a.get("cov", "ledoit_wolf"),
         "fuzzy": a.get("fuzzy", "0"),
+        "protocol": a.get("protocol", "walk_forward"),
+        "caps": a.get("caps", "1"),
     }
     if raw["profile"] not in config.PROFILES:
         raw["profile"] = "moderate"
@@ -50,6 +52,9 @@ def settings_from_request() -> tuple[config.Settings, dict]:
         raw["models"] = "fast"
     if raw["rebalance"] not in REBALANCE:
         raw["rebalance"] = "W"
+    if raw["protocol"] not in config.PROTOCOLS:
+        raw["protocol"] = "walk_forward"
+    raw["caps"] = "0" if raw["caps"] == "0" else "1"
     try:
         tc = float(raw["tc"])
     except ValueError:
@@ -57,7 +62,8 @@ def settings_from_request() -> tuple[config.Settings, dict]:
     st = config.Settings(profile=raw["profile"], scenario=raw["scenario"], universe=raw["universe"],
                          models=MODEL_SETS[raw["models"]], rebalance=raw["rebalance"], tc_bps=tc,
                          cov_method=raw["cov"] if raw["cov"] in ("sample", "ledoit_wolf") else "ledoit_wolf",
-                         use_fuzzy_caps=raw["fuzzy"] == "1")
+                         use_fuzzy_caps=raw["fuzzy"] == "1", protocol=raw["protocol"],
+                         backtest_caps=raw["caps"] == "1")
     return st, raw
 
 
@@ -78,15 +84,16 @@ def fmt(v, kind="num", d=2):
 def table(df: pd.DataFrame, pct=(), d=3, index_name=None, highlight=None) -> str:
     """DataFrame -> HTML table with Russian number formatting."""
     cols = list(df.columns)
-    head = f"<th>{index_name or (df.index.name or '')}</th>" + "".join(f"<th>{c}</th>" for c in cols)
+    esc = html.escape
+    head = f"<th>{esc(str(index_name or (df.index.name or '')))}</th>" + "".join(f"<th>{esc(str(c))}</th>" for c in cols)
     rows = []
     for idx, r in df.iterrows():
         cls = ' class="hl"' if highlight is not None and idx == highlight else ""
         cells = "".join(
             f'<td class="num">{fmt(r[c], "pct" if c in pct else "num", 1 if c in pct else d)}</td>'
-            if isinstance(r[c], (int, float, np.integer, np.floating)) else f"<td>{r[c]}</td>"
+            if isinstance(r[c], (int, float, np.integer, np.floating)) else f"<td>{esc(str(r[c]))}</td>"
             for c in cols)
-        rows.append(f"<tr{cls}><th scope='row'>{idx}</th>{cells}</tr>")
+        rows.append(f"<tr{cls}><th scope='row'>{esc(str(idx))}</th>{cells}</tr>")
     return f'<div class="tbl"><table><thead><tr>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
 
 
@@ -98,7 +105,9 @@ def context(page: str):
     st, raw = settings_from_request()
     res = pipeline.run(st)
     qs = "&".join(f"{k}={v}" for k, v in raw.items())
-    return {"page": page, "r": res, "st": st, "raw": raw, "qs": qs, "tf": tensorflow_available()}
+    paper_qs = "&".join(f"{k}={v}" for k, v in (raw | config.PAPER_PRESET).items())
+    return {"page": page, "r": res, "st": st, "raw": raw, "qs": qs, "paper_qs": paper_qs,
+            "tf": tensorflow_available()}
 
 
 @app.route("/")
@@ -110,6 +119,10 @@ def decision():
     a = a[a["weight"] > 0.0005]
     c["alloc_table"] = pd.DataFrame({"Вес": a["weight"], "Сигнал s": a["signal"], "Кластер": a["cluster"]})
     c["img_kz"] = plots.kz_forecast(r.macro, r.settings.scenario)
+    sens = pipeline.rule_sensitivity(r)
+    grid = sens["risk_grid"].copy()
+    grid.index = [fmt(float(v), "pct", 0) for v in grid.index]
+    c["sens"], c["sens_grid"] = sens, grid
     return render_template("decision.html", **c)
 
 
@@ -166,6 +179,7 @@ def signals_page():
     c["img_curves"] = plots.equity_curves(r.backtest.curves)
     c["img_ranks"] = plots.rank_signals(r.signals.latest)
     c["img_ic"] = plots.model_ic(r.signals.metrics)
+    c["sig_sharpe"], c["sig_dm"] = pipeline.significance_tables(r, fmt=lambda v: fmt(v, "num", 2))
     return render_template("signals.html", **c)
 
 

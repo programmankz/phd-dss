@@ -102,3 +102,6 @@ pre { background: var(--surface); border: 1px solid var(--line); border-radius: 
   main { padding: 16px; } .g2, .g4, .chain { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+details.sens { padding: 10px 16px; margin: 22px 0; }
+details.sens > summary { cursor: pointer; }
+details.sens > summary h2 { margin: 0; }
