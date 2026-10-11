@@ -12,7 +12,7 @@ sources used in the articles and writes them to the data directory:
                 (falls back to World Bank WDI NY.GDP.MKTP.KD.ZG when IMF refuses)
 * FX rates    - National Bank of the Republic of Kazakhstan, daily official rates [A2]
 * NSE prices  - Yahoo Finance via ``yfinance`` (optional dependency)             [A4]
-* KASE prices - CSV exported from kase.kz (no public API; see README)             [A3]
+* KASE prices - kase.kz chart feed (TradingView UDF, /tv-charts/securities)      [A3]
 
 Expected CSV layouts
 --------------------
@@ -47,6 +47,12 @@ NSE_TICKERS = [
     "BRITANNIA.NS", "ITC.NS", "NESTLEIND.NS", "TATACONSUM.NS",
     "TMPV.NS", "MARUTI.NS", "M&M.NS", "BAJAJ-AUTO.NS",
 ]  # [A4] Table II; TATAMOTORS.NS was renamed TMPV.NS after the Oct 2025 demerger (history kept)
+# Liquid KASE shares with >= 3 years of history (BAST trades too rarely, AIRA listed in 2024).
+KASE_SECTORS = {
+    "HSBK": "Финансы", "KSPI": "Финансы", "CCBN": "Финансы", "KZTK": "Телеком", "KCEL": "Телеком",
+    "KEGC": "Энергетика", "KZTO": "Энергетика", "KMGZ": "Нефть и газ", "KZAP": "Уран",
+}
+KASE_TICKERS = list(KASE_SECTORS)
 # Demergers Yahoo does not adjust for: {ticker: first ex-date}. TMCV.NS (commercial vehicles)
 # was spun off from Tata Motors on 2025-10-14; the raw close drops ~40% that day.
 NSE_DEMERGERS = {"TMPV.NS": "2025-10-14"}
@@ -277,6 +283,29 @@ def fetch_gdp(last_year: int = 2024) -> tuple[pd.DataFrame, str]:
     except (OSError, ValueError, KeyError) as exc:  # HTTPError/URLError are OSError
         print(f"  IMF DataMapper недоступен ({exc}); загружаю из World Bank WDI")
         return fetch_worldbank_gdp(last_year=last_year), "World Bank WDI (NY.GDP.MKTP.KD.ZG)"
+
+
+def fetch_kase(tickers=None, start: str = "2019-01-01", end: str | None = None) -> pd.DataFrame:
+    """Daily closes (KZT) from the kase.kz chart feed. Unadjusted for dividends, as on KASE."""
+    t0 = int(pd.Timestamp(start).timestamp())
+    t1 = int((pd.Timestamp(end) if end else pd.Timestamp.today().normalize() + pd.Timedelta(days=1)).timestamp())
+    out = {}
+    for t in tickers or KASE_TICKERS:
+        url = f"https://kase.kz/tv-charts/securities/history?symbol={t}&resolution=D&from={t0}&to={t1}"
+        try:
+            j = json.loads(_get(url))
+        except OSError as exc:
+            print(f"  {t}: {exc} — пропущен")
+            continue
+        if j.get("s") != "ok" or not j.get("t"):
+            print(f"  {t}: нет данных на kase.kz — пропущен")
+            continue
+        out[t] = pd.Series(j["c"], index=pd.to_datetime(j["t"], unit="s").normalize(), dtype=float)
+    if not out:
+        raise RuntimeError("kase.kz не вернул цен ни по одному тикеру")
+    px = pd.DataFrame(out).sort_index()
+    px.index.name = "Date"
+    return px.ffill()
 
 
 def fetch_nbk_day(date: pd.Timestamp) -> dict:

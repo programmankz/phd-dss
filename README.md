@@ -85,8 +85,8 @@ GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) на к�
 |---|---|---|---|
 | `gdp_growth.csv` | `country,1980,…,2024` (рост реального ВВП, %) | `python -m dss.cli fetch gdp` (IMF WEO; при отказе IMF — World Bank WDI) или ваш `world_gdp_data.csv` | I |
 | `fx_rates.csv` | `Date,USD,EUR,CNY,RUB` (тенге за единицу) | `python -m dss.cli fetch fx` (НБ РК, с докачкой) | II |
-| `prices_kase.csv` | `Date,HSBK,KSPI,…` (цены закрытия) | экспорт с kase.kz | III, IV |
-| `fundamentals_kase.csv` | `ticker,sector,PB,PE` | kase.kz / отчётность эмитентов | III |
+| `prices_kase.csv` | `Date,HSBK,KSPI,…` (цены закрытия) | `python -m dss.cli fetch kase` (графики kase.kz) или экспорт с kase.kz | III, IV |
+| `fundamentals_kase.csv` | `ticker,sector,PB,PE` | секторы — `fetch kase`; P/B, P/E — отчётность эмитентов | III |
 | `prices_nse.csv` | `Date,HDFCBANK.NS,…` | `python -m dss.cli fetch nse` (нужен `yfinance`) | III, IV |
 
 ## Структура
