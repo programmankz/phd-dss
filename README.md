@@ -22,6 +22,8 @@
 
 Нужен Python 3.10 или новее ([python.org](https://www.python.org/downloads/)).
 
+**Подробная пошаговая инструкция** (установка, переход на реальные данные, частые ошибки): [docs/SETUP.md](docs/SETUP.md).
+
 **Linux / macOS** (Terminal):
 
 ```bash
@@ -75,13 +77,13 @@ GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) на к�
 
 ## Данные
 
-Положите CSV в папку `data/` (или укажите другую через `DSS_DATA_DIR`) и нажмите в интерфейсе «Данные → Сбросить кэш».
+Пошагово — в [docs/SETUP.md](docs/SETUP.md#4-перейти-с-демо-данных-на-реальные). Положите CSV в папку `data/` (или укажите другую через `DSS_DATA_DIR`) и нажмите в интерфейсе «Данные → Сбросить кэш».
 
 Файлы проверяются при загрузке. Даты — `ГГГГ-ММ-ДД` (или `ДД.ММ.ГГГГ`, как в выгрузке kase.kz), дробная часть — через точку, цены и курсы — положительные; в ценах нужно не меньше 6 бумаг и 300 торговых дней, в курсах — все четыре валюты и не меньше 5 лет истории, в панели ВВП — строка `Kazakhstan` и годы по обе стороны 2014 г. Файл с ошибкой не останавливает расчёт: система показывает причину и действие (например, «Файл prices_kase.csv: нет столбца Date — проверьте заголовок…») на каждом экране, в отчёте и в консоли, а для этого набора временно берёт демо-данные.
 
 | Файл | Формат | Источник | Модуль |
 |---|---|---|---|
-| `gdp_growth.csv` | `country,1980,…,2024` (рост реального ВВП, %) | `python -m dss.cli fetch gdp` (IMF WEO DataMapper) или ваш `world_gdp_data.csv` | I |
+| `gdp_growth.csv` | `country,1980,…,2024` (рост реального ВВП, %) | `python -m dss.cli fetch gdp` (IMF WEO; при отказе IMF — World Bank WDI) или ваш `world_gdp_data.csv` | I |
 | `fx_rates.csv` | `Date,USD,EUR,CNY,RUB` (тенге за единицу) | `python -m dss.cli fetch fx` (НБ РК, с докачкой) | II |
 | `prices_kase.csv` | `Date,HSBK,KSPI,…` (цены закрытия) | экспорт с kase.kz | III, IV |
 | `fundamentals_kase.csv` | `ticker,sector,PB,PE` | kase.kz / отчётность эмитентов | III |

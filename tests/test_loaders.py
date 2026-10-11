@@ -175,3 +175,28 @@ def test_fundamentals_require_ticker_column():
 def test_no_user_files_means_demo():
     with data_dir({}):
         assert loaders.load_prices("kase").is_demo and loaders.load_fx().is_demo and loaders.load_gdp().is_demo
+
+
+# ------------------------------------------------------------------ live sources
+def test_gdp_fetch_falls_back_to_world_bank_when_imf_refuses():
+    import json
+    import urllib.error
+
+    countries = [{"id": "KAZ", "name": "Kazakhstan", "region": {"id": "ECS"}},
+                 {"id": "WLD", "name": "World", "region": {"id": "NA"}}]
+    obs = [{"countryiso3code": iso, "date": str(y), "value": v}
+           for iso in ("KAZ", "WLD") for y, v in ((2014, 4.2), (2015, 1.2), (2016, None))]
+
+    def fake_get(url, timeout=30):
+        if "imf.org" in url:
+            raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+        return json.dumps([{}, countries if "/indicator/" not in url else obs]).encode()
+
+    real_get, loaders._get = loaders._get, fake_get
+    try:
+        df, source = loaders.fetch_gdp()
+    finally:
+        loaders._get = real_get
+    assert "World Bank" in source
+    assert list(df.index) == ["Kazakhstan"]            # aggregate "World" dropped
+    assert df.loc["Kazakhstan", 2015] == 1.2 and 2016 not in df.columns
