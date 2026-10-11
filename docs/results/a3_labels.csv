@@ -1,0 +1,26 @@
+ticker,K-means,K-medoids,Fuzzy C-means,variant,medoid
+HSBK,2,1,2,все 9 бумаг,False
+KSPI,2,1,1,все 9 бумаг,False
+CCBN,2,1,2,все 9 бумаг,False
+KZTK,2,1,1,все 9 бумаг,False
+KCEL,1,2,2,все 9 бумаг,True
+KEGC,1,2,2,все 9 бумаг,False
+KZTO,2,1,1,все 9 бумаг,True
+KMGZ,1,1,2,все 9 бумаг,False
+KZAP,2,1,1,все 9 бумаг,False
+HSBK,2,1,1,без KZTK,False
+KSPI,2,1,1,без KZTK,False
+CCBN,2,1,1,без KZTK,False
+KCEL,1,2,2,без KZTK,True
+KEGC,1,2,2,без KZTK,False
+KZTO,2,1,1,без KZTK,True
+KMGZ,1,2,2,без KZTK,False
+KZAP,2,1,1,без KZTK,False
+HSBK,2,1,1,без KMGZ,False
+KSPI,2,1,2,без KMGZ,False
+CCBN,1,2,1,без KMGZ,True
+KZTK,2,1,2,без KMGZ,True
+KCEL,2,1,2,без KMGZ,False
+KEGC,2,1,2,без KMGZ,False
+KZTO,2,1,2,без KMGZ,False
+KZAP,2,1,1,без KMGZ,False

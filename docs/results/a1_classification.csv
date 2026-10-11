@@ -1,0 +1,5 @@
+Модель,accuracy,roc_auc,recall_recession,f1_recession
+Logistic Regression,0.672929,0.622861,0.415385,0.323031
+Random Forest,0.695568,0.624757,0.428205,0.345756
+Gradient Boosting,0.800096,0.61288,0.117949,0.18146
+SVM (RBF),0.678709,0.643314,0.448718,0.344149

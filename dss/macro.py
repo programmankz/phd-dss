@@ -267,6 +267,16 @@ def _cluster_names(stats_df: pd.DataFrame, labels: np.ndarray) -> dict:
     return names
 
 
+def recession_classifiers(seed: int = config.RANDOM_SEED) -> dict:
+    """Recession classifiers of [A1] Sec. 4 (unfitted)."""
+    return {
+        "Logistic Regression": LogisticRegression(max_iter=2000, class_weight="balanced"),
+        "Random Forest": RandomForestClassifier(100, max_depth=6, class_weight="balanced", random_state=seed, n_jobs=-1),
+        "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, learning_rate=0.10, max_depth=4, random_state=seed),
+        "SVM (RBF)": SVC(C=1.0, kernel="rbf", probability=True, class_weight="balanced", random_state=seed),
+    }
+
+
 def run(gdp_wide: pd.DataFrame, country: str = config.TARGET_COUNTRY,
         train_end: int = config.MACRO_TRAIN_END_YEAR, horizon: int = config.MACRO_FORECAST_HORIZON,
         dtw: bool = True) -> MacroResult:
@@ -278,12 +288,7 @@ def run(gdp_wide: pd.DataFrame, country: str = config.TARGET_COUNTRY,
     Xtr, Xte = scaler.transform(train[FEATURES]), scaler.transform(test[FEATURES])
 
     # ---- recession classification
-    clfs = {
-        "Logistic Regression": LogisticRegression(max_iter=2000, class_weight="balanced"),
-        "Random Forest": RandomForestClassifier(100, max_depth=6, class_weight="balanced", random_state=seed, n_jobs=-1),
-        "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, learning_rate=0.10, max_depth=4, random_state=seed),
-        "SVM (RBF)": SVC(C=1.0, kernel="rbf", probability=True, class_weight="balanced", random_state=seed),
-    }
+    clfs = recession_classifiers(seed)
     rows, preds = [], {}
     for name, m in clfs.items():
         m.fit(Xtr, train.recession)

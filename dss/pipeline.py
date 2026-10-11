@@ -98,6 +98,17 @@ def _load(errors: list, loader, *args):
         return loader(*args, source="demo")
 
 
+def backtest_limits(st: Settings, c: clustering.ClusterResult, columns) -> tuple[tuple, tuple | None]:
+    """(w_max, cluster labels, U, cluster cap) of the Module IV backtest and their cache key."""
+    if not st.backtest_caps:                 # [A4]: only 0 <= w_i <= 1
+        return (1.0, None, None, None), None
+    prof = PROFILES[st.profile]
+    labels = c.labels["K-medoids"].reindex(columns).to_numpy()
+    U = c.U.reindex(columns).to_numpy() if st.use_fuzzy_caps else None
+    return ((prof.max_asset_weight, labels, U, prof.cluster_cap),
+            (prof.max_asset_weight, prof.cluster_cap, st.use_fuzzy_caps))
+
+
 def run(settings: Settings | None = None) -> RunResult:
     st = settings or Settings()
     errors: list = []
@@ -120,14 +131,7 @@ def run(settings: Settings | None = None) -> RunResult:
     proto = PROTOCOLS[st.protocol]
     s = cached("signals", _fingerprint(prices, st.models, proto),
                lambda: signals.run(prices, st.models, proto["train_share"], proto["retrain_every"]))
-    prof = PROFILES[st.profile]
-    if st.backtest_caps:
-        labels = c.labels["K-medoids"].reindex(prices.columns).to_numpy()
-        U = c.U.reindex(prices.columns).to_numpy() if st.use_fuzzy_caps else None
-        limits = (prof.max_asset_weight, labels, U, prof.cluster_cap)
-        lkey = (prof.max_asset_weight, prof.cluster_cap, st.use_fuzzy_caps)
-    else:                                    # [A4]: only 0 <= w_i <= 1
-        limits, lkey = (1.0, None, None, None), None
+    limits, lkey = backtest_limits(st, c, prices.columns)
     bt_key = _fingerprint(prices, st.models, proto, st.rebalance, st.tc_bps, st.cov_method, lkey, st.risk_free)
     deferred = {"backtest": lambda: cached("backtest", bt_key, lambda: portfolio.backtest(
         prices, s.ranks, st.rebalance, st.tc_bps, st.cov_method, *limits, risk_free=st.risk_free))}

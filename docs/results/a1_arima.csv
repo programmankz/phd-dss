@@ -1,0 +1,5 @@
+order,AIC,selected
+"ARIMA(1, 1, 0)",88.0491,False
+"ARIMA(2, 1, 0)",83.0657,False
+"ARIMA(3, 1, 0)",83.0344,True
+"ARIMA(2, 1, 1)",84.9451,False
