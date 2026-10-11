@@ -55,9 +55,9 @@ def main(argv=None) -> int:
         out = loaders.data_dir()
         out.mkdir(parents=True, exist_ok=True)
         if a.what == "gdp":
-            df = loaders.fetch_imf_gdp()
+            df, source = loaders.fetch_gdp()
             df.to_csv(out / "gdp_growth.csv")
-            print(f"gdp_growth.csv: {df.shape[0]} стран, {df.columns.min()}–{df.columns.max()}")
+            print(f"gdp_growth.csv ({source}): {df.shape[0]} стран, {df.columns.min()}–{df.columns.max()}")
         elif a.what == "fx":
             df = loaders.fetch_nbk(start=a.start or "2000-01-01")
             print(f"fx_rates.csv: {len(df)} дней, {df.index.min():%Y-%m-%d} – {df.index.max():%Y-%m-%d}")

@@ -9,6 +9,7 @@ Resolution order for every dataset (``source="auto"``):
 sources used in the articles and writes them to the data directory:
 
 * GDP growth  - IMF World Economic Outlook DataMapper API, indicator NGDP_RPCH  [A1]
+                (falls back to World Bank WDI NY.GDP.MKTP.KD.ZG when IMF refuses)
 * FX rates    - National Bank of the Republic of Kazakhstan, daily official rates [A2]
 * NSE prices  - Yahoo Finance via ``yfinance`` (optional dependency)             [A4]
 * KASE prices - CSV exported from kase.kz (no public API; see README)             [A3]
@@ -187,7 +188,8 @@ def load_gdp(source: str = "auto") -> Dataset:
     if source in ("auto", "csv") and path.exists():
         return Dataset(validate_gdp(_read_csv(path), path.name), f"CSV: {path.name}", False)
     if source == "live":
-        return Dataset(fetch_imf_gdp(), "IMF WEO DataMapper (NGDP_RPCH)", False)
+        df, src = fetch_gdp()
+        return Dataset(df, src, False)
     return Dataset(demo.gdp_panel(), "DEMO: синтетическая панель", True)
 
 
@@ -246,6 +248,32 @@ def fetch_imf_gdp(last_year: int = 2024) -> pd.DataFrame:
     df = pd.DataFrame.from_dict(rows, orient="index").sort_index(axis=1)
     df.index.name = "country"
     return df
+
+
+def fetch_worldbank_gdp(first_year: int = 1980, last_year: int = 2024) -> pd.DataFrame:
+    """Real GDP growth (%) from World Bank WDI, indicator NY.GDP.MKTP.KD.ZG, same layout."""
+    base = "https://api.worldbank.org/v2"
+    meta = json.loads(_get(f"{base}/country?format=json&per_page=1000"))[1]
+    countries = {c["id"]: c["name"] for c in meta if c["region"]["id"] != "NA"}  # drops aggregates
+    url = (f"{base}/country/all/indicator/NY.GDP.MKTP.KD.ZG"
+           f"?format=json&per_page=20000&date={first_year}:{last_year}")
+    rows: dict = {}
+    for obs in json.loads(_get(url, timeout=120))[1]:
+        iso = obs["countryiso3code"]
+        if iso in countries and obs["value"] is not None:
+            rows.setdefault(countries[iso], {})[int(obs["date"])] = obs["value"]
+    df = pd.DataFrame.from_dict(rows, orient="index").sort_index(axis=1)
+    df.index.name = "country"
+    return df
+
+
+def fetch_gdp(last_year: int = 2024) -> tuple[pd.DataFrame, str]:
+    """IMF WEO [A1] first; the IMF API rejects scripted requests (HTTP 403), so fall back to World Bank."""
+    try:
+        return fetch_imf_gdp(last_year), "IMF WEO (NGDP_RPCH)"
+    except (OSError, ValueError, KeyError) as exc:  # HTTPError/URLError are OSError
+        print(f"  IMF DataMapper недоступен ({exc}); загружаю из World Bank WDI")
+        return fetch_worldbank_gdp(last_year=last_year), "World Bank WDI (NY.GDP.MKTP.KD.ZG)"
 
 
 def fetch_nbk_day(date: pd.Timestamp) -> dict:

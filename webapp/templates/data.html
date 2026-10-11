@@ -11,7 +11,7 @@
 <ul>{% for e in r.data_errors %}<li>{{ e }}</li>{% endfor %}</ul>
 {% endif %}
 <h2>Как подключить реальные данные</h2>
-<pre>python -m dss.cli fetch gdp        # IMF WEO DataMapper → data/gdp_growth.csv
+<pre>python -m dss.cli fetch gdp        # IMF WEO (при отказе — World Bank WDI) → data/gdp_growth.csv
 python -m dss.cli fetch fx         # НБ РК, дневные курсы → data/fx_rates.csv (долго, с докачкой)
 python -m dss.cli fetch nse        # Yahoo Finance, 20 акций NSE → data/prices_nse.csv
 python -m dss.cli warmup           # предварительный расчёт всех модулей</pre>
