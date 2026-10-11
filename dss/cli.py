@@ -6,6 +6,7 @@
     python -m dss.cli report -o out.html   write the HTML report
     python -m dss.cli sensitivity          sensitivity of the integration rules
     python -m dss.cli significance         bootstrap Sharpe CIs and Diebold-Mariano tests
+    python -m dss.cli export -o t.xlsx     all result tables (.xlsx needs openpyxl, else .zip of CSV)
     python -m dss.cli serve                start the web interface
 """
 from __future__ import annotations
@@ -32,7 +33,7 @@ def main(argv=None) -> int:
     f = sub.add_parser("fetch", help="загрузить реальные данные")
     f.add_argument("what", choices=["gdp", "fx", "nse"])
     f.add_argument("--start", default=None)
-    for name in ("warmup", "decide", "report", "sensitivity", "significance"):
+    for name in ("warmup", "decide", "report", "sensitivity", "significance", "export"):
         s = sub.add_parser(name)
         s.add_argument("--profile", default="moderate", choices=list(config.PROFILES))
         s.add_argument("--scenario", default="base", choices=list(config.SCENARIOS))
@@ -48,6 +49,9 @@ def main(argv=None) -> int:
                        help="бэктест без лимитов профиля и кластеров (0 ≤ w ≤ 1, как в [A4])")
         if name == "report":
             s.add_argument("-o", "--output", default="dss_report.html")
+        if name == "export":
+            s.add_argument("-o", "--output", default=None,
+                           help="файл .xlsx (нужен openpyxl) или .zip (CSV); по умолчанию dss_tables.xlsx/.zip")
     sub.add_parser("serve")
     a = p.parse_args(argv)
 
@@ -109,6 +113,17 @@ def main(argv=None) -> int:
             print(sharpe.to_string(float_format=lambda v: f"{v:.3f}"), "\n")
             print("Диболд–Мариано против наивного прогноза r̂ = 0 (DM < 0 — модель точнее):")
             print(dm.to_string(float_format=lambda v: f"{v:.3f}"))
+    elif a.cmd == "export":
+        from .export import excel_available, export
+        out = a.output or ("dss_tables.xlsx" if excel_available() else "dss_tables.zip")
+        if out.endswith(".xlsx") and not excel_available():
+            print("Для .xlsx нужен пакет openpyxl: python -m pip install openpyxl "
+                  "(или укажите файл .zip — таблицы будут в CSV)", file=sys.stderr)
+            return 2
+        data, ext, _ = export(r, "xlsx" if out.endswith(".xlsx") else "zip")
+        with open(out, "wb") as fh:
+            fh.write(data)
+        print(f"Таблицы: {out}")
     else:
         from .report import build_report
         with open(a.output, "w", encoding="utf-8") as fh:

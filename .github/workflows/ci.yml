@@ -50,3 +50,21 @@ jobs:
           python -m pip install -r ${{ matrix.deps }} pytest
       - name: Run tests
         run: python -m pytest -q --durations=5
+
+  deep-models:
+    # FR-IV-03: RNN / LSTM / CNN-LSTM / LSTM-MLP with TensorFlow (optional dependency)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt pytest tensorflow
+      - name: Run deep model tests
+        run: python -m pytest -q tests/test_analysis.py -k "deep_models or sequence_windows" -rs
