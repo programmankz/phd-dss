@@ -86,3 +86,12 @@ def test_report_lists_questions_and_needed_values():
     assert md.index("## раздел a1") < md.index("## раздел a4") < md.index("## Вопросы к автору")
     assert "1. вопрос a1" in md and reproduce.NEED in md and "0,50" in md
     assert all(c.split("**")[1] in md for c in reproduce.CAVEATS if "**" in c)
+
+
+def test_results_csv_keep_the_decimal_point():
+    import tempfile
+    a = reproduce.Article("x", tables={"t": pd.DataFrame({"v": [0.25, 1234.5]}, index=pd.Index(["a", "b"]))})
+    with tempfile.TemporaryDirectory() as tmp:
+        reproduce.write_results({"x": a}, Path(tmp))
+        text = (Path(tmp) / "t.csv").read_text()
+    assert "0.25" in text and "1234.5" in text and "," in text.splitlines()[0]

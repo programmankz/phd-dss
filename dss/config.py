@@ -77,6 +77,24 @@ PROTOCOLS = {
 PAPER_PRESET = {"protocol": "paper", "cov": "sample", "rebalance": "D", "tc": "0", "caps": "0"}
 RISK_FREE = 0.05         # reproduces the Sharpe ratios of [A4] Table IV
 
+# Risk-free rate per universe (FR-IV-12). NSE: 5 %, inferred from [A4] Table IV.
+# KASE: the NBK base rate is to be used, but no value with a source is in the repository yet,
+# so the entry is a PLACEHOLDER (None) that falls back to RISK_FREE and is flagged in the UI.
+# Replace None with the rate as a fraction (e.g. 0.15 for 15 %) once the author provides it.
+RISK_FREE_BY_UNIVERSE = {"nse": RISK_FREE, "kase": None}
+
+
+def risk_free_for(universe: str) -> tuple[float, str]:
+    """(annual risk-free rate, Russian note on its origin) for a universe."""
+    rate = RISK_FREE_BY_UNIVERSE.get(universe)
+    if rate is not None:
+        return float(rate), ("5 % — восстановлена по табл. IV [A4]" if universe == "nse" and rate == RISK_FREE
+                             else f"задана в config.RISK_FREE_BY_UNIVERSE[{universe!r}]")
+    if universe in RISK_FREE_BY_UNIVERSE:
+        return RISK_FREE, ("заглушка: ставка НБ РК для этого набора ещё не задана "
+                           "(config.RISK_FREE_BY_UNIVERSE), временно используется 5 %")
+    return RISK_FREE, "5 % по умолчанию (config.RISK_FREE)"
+
 
 @dataclass(frozen=True)
 class InvestorProfile:
@@ -140,10 +158,19 @@ class Settings:
     tc_bps: float = 10.0                 # transaction costs, basis points
     cov_method: str = "ledoit_wolf"      # "sample" reproduces [A4]
     use_fuzzy_caps: bool = False
-    risk_free: float = RISK_FREE
+    risk_free: float | None = None       # None: by universe, see risk_free_for()
     protocol: str = "walk_forward"       # Module IV evaluation: "walk_forward" | "paper" (80/20)
     backtest_caps: bool = True           # False: only 0 <= w_i <= 1 in the backtest, as in [A4]
     extra: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.risk_free is None:
+            self.risk_free = risk_free_for(self.universe)[0]
+
+    @property
+    def risk_free_note(self) -> str:
+        rate, note = risk_free_for(self.universe)
+        return note if abs(rate - self.risk_free) < 1e-12 else "задана вручную"
 
     def key(self) -> tuple:
         return (self.profile, self.scenario, self.universe, tuple(self.models),

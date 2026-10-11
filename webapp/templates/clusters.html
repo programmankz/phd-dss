@@ -16,7 +16,7 @@
 </div>
 <h2>Показатели эффективности кластерных портфелей (табл. 2 [A3])</h2>
 {{ table(r.cluster_table.rename(columns={'total_return':'Доходность','annual_return':'Годовая доходность','annual_vol':'Годовая волатильность','sharpe':'Шарп','max_drawdown':'Макс. просадка','turnover':'Оборачиваемость'}), pct=('Доходность','Годовая доходность','Годовая волатильность','Макс. просадка','Оборачиваемость'), d=2, index_name='Стратегия') | safe }}
-<p class="note">Ежемесячная перекластеризация по скользящему окну 252 дня. K-means и K-medoids: в каждом кластере берётся актив с лучшим Шарпом за окно, веса равные. FCM: бюджет кластера 1/k распределяется пропорционально u<sub>ij</sub><sup>m</sup>·max(Sharpe, 0). Издержки {{ raw.tc }} б.п., безрисковая ставка {{ fmt(st.risk_free, 'pct', 0) }}.</p>
+<p class="note">Ежемесячная перекластеризация по скользящему окну 252 дня. K-means и K-medoids: в каждом кластере берётся актив с лучшим Шарпом за окно, веса равные. FCM: бюджет кластера 1/k распределяется пропорционально u<sub>ij</sub><sup>m</sup>·max(Sharpe, 0). Издержки {{ raw.tc }} б.п., безрисковая ставка {{ fmt(st.risk_free, 'pct', 0) }} ({{ st.risk_free_note }}).</p>
 <div class="grid g3">
   <div><h2>Качество разбиения</h2>{{ table(c.metrics.rename(columns={'silhouette':'Силуэт','davies_bouldin':'Дэвис–Боулдин','inertia':'Стоимость'}), d=3, index_name='Метод') | safe }}</div>
   <figure class="fig panel" style="margin-top:20px"><img alt="k" src="data:image/png;base64,{{ img_k }}"></figure>

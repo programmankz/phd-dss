@@ -20,6 +20,7 @@ gdp_growth.csv    : country,1980,1981,...,2024           (wide, % change)
 fx_rates.csv      : Date,USD,EUR,CNY,RUB                 (KZT per unit)
 prices_<u>.csv    : Date,<TICKER1>,<TICKER2>,...         (close prices)
 fundamentals_<u>.csv : ticker,sector,PB,PE
+corporate_actions.csv : ticker,ex_date,method,factor,note  (optional, applied to every price file)
 
 A malformed user CSV raises :class:`DataError` with a message that names the
 file, the cause and the action; :func:`dss.pipeline.run` turns it into a
@@ -54,8 +55,10 @@ KASE_SECTORS = {
 }
 KASE_TICKERS = list(KASE_SECTORS)
 # Demergers Yahoo does not adjust for: {ticker: first ex-date}. TMCV.NS (commercial vehicles)
-# was spun off from Tata Motors on 2025-10-14; the raw close drops ~40% that day.
+# was spun off from Tata Motors on 2025-10-14; the raw close drops ~40% that day. Built-in
+# default applied by `fetch nse`; further events go to data/corporate_actions.csv.
 NSE_DEMERGERS = {"TMPV.NS": "2025-10-14"}
+ACTION_METHODS = ("ratio", "factor")
 NSE_SECTORS = dict(zip(NSE_TICKERS, ["Финансы"] * 4 + ["IT"] * 4 + ["Энергетика"] * 4 +
                        ["Потребительский"] * 4 + ["Авто"] * 4))
 
@@ -210,11 +213,81 @@ def load_fx(source: str = "auto") -> Dataset:
     return Dataset(demo.fx_rates(), "DEMO: синтетические курсы", True)
 
 
+def validate_corporate_actions(df: pd.DataFrame, name: str = "corporate_actions.csv") -> pd.DataFrame:
+    """ticker,ex_date,method,factor,note -> typed frame; ``method`` is "ratio" (back-adjust by the
+    observed close ratio around the ex-date) or "factor" (multiply earlier prices by ``factor``)."""
+    missing = [c for c in ("ticker", "ex_date", "method") if c not in df.columns]
+    if missing:
+        raise DataError(f"Файл {name}: нет столбцов {', '.join(missing)} — проверьте заголовок "
+                        "(ожидается: ticker,ex_date,method,factor,note)")
+    df = df.copy()
+    df["ticker"] = df["ticker"].astype(str).str.strip()
+    df["method"] = df["method"].astype(str).str.strip().str.lower()
+    dates = pd.to_datetime(df["ex_date"].astype(str).str.strip(), format="%Y-%m-%d", errors="coerce")
+    if dates.isna().any():
+        bad = df.loc[dates.isna(), "ex_date"].iloc[0]
+        raise DataError(f"Файл {name}: дата «{bad}» в столбце ex_date не распознана — используйте формат ГГГГ-ММ-ДД")
+    df["ex_date"] = dates
+    bad = df.loc[~df["method"].isin(ACTION_METHODS), "method"]
+    if len(bad):
+        raise DataError(f"Файл {name}: метод «{bad.iloc[0]}» не поддерживается — укажите ratio (по отношению цен "
+                        "до и после события) или factor (явный множитель)")
+    factor = pd.to_numeric(df["factor"], errors="coerce") if "factor" in df else pd.Series(float("nan"), df.index)
+    need = (df["method"] == "factor") & ~(factor > 0)
+    if need.any():
+        t = df.loc[need].iloc[0]
+        raise DataError(f"Файл {name}: для {t.ticker} ({t.ex_date:%Y-%m-%d}) метод factor требует положительного "
+                        "множителя в столбце factor (точка как разделитель дробной части)")
+    df["factor"] = factor
+    dup = df.duplicated(["ticker", "ex_date"])
+    if dup.any():
+        t = df.loc[dup].iloc[0]
+        raise DataError(f"Файл {name}: событие {t.ticker} {t.ex_date:%Y-%m-%d} указано несколько раз — "
+                        "оставьте одну строку")
+    return df.sort_values("ex_date").reset_index(drop=True)
+
+
+def load_corporate_actions() -> pd.DataFrame | None:
+    """Optional data/corporate_actions.csv, validated; None if there is no file."""
+    path = data_dir() / "corporate_actions.csv"
+    if not path.exists():
+        return None
+    return validate_corporate_actions(_read_csv(path), path.name)
+
+
+def apply_corporate_actions(px: pd.DataFrame, actions: pd.DataFrame | None) -> tuple[pd.DataFrame, int]:
+    """Back-adjust prices before each ex-date; returns (frame, number of events applied).
+    Events for tickers not in ``px`` or with ex-dates outside its range are skipped. The ratio
+    method is idempotent: on already adjusted prices the ratio is 1."""
+    px, n = px.copy(), 0
+    if actions is None:
+        return px, n
+    for a in actions.itertuples():
+        if a.ticker not in px:
+            continue
+        s = px[a.ticker]
+        before, after = s[s.index < a.ex_date].dropna(), s[s.index >= a.ex_date].dropna()
+        if before.empty or after.empty:
+            continue
+        k = after.iloc[0] / before.iloc[-1] if a.method == "ratio" else a.factor
+        px.loc[px.index < a.ex_date, a.ticker] = s[s.index < a.ex_date] * k
+        n += 1
+    return px, n
+
+
+def raw_prices(universe: str = "kase") -> tuple[pd.DataFrame, str]:
+    """Prices from data/prices_<universe>.csv with corporate actions applied, before the
+    common-history filter of :func:`validate_prices`; returns (frame, source label)."""
+    path = data_dir() / f"prices_{universe}.csv"
+    df, n = apply_corporate_actions(_dated_frame(path, "Date,<тикер1>,<тикер2>,…"), load_corporate_actions())
+    return df, f"CSV: {path.name}" + (f"; корпоративные события: {n} (corporate_actions.csv)" if n else "")
+
+
 def load_prices(universe: str = "kase", source: str = "auto") -> Dataset:
     path = data_dir() / f"prices_{universe}.csv"
     if source in ("auto", "csv") and path.exists():
-        df = _dated_frame(path, "Date,<тикер1>,<тикер2>,…")
-        return Dataset(validate_prices(df, path.name), f"CSV: {path.name}", False)
+        df, label = raw_prices(universe)
+        return Dataset(validate_prices(df, path.name), label, False)
     if source == "live" and universe == "nse":
         return Dataset(fetch_yahoo(NSE_TICKERS), "Yahoo Finance (NSE)", False)
     return Dataset(demo.equity_prices(), "DEMO: синтетические цены (тикеры KASE)", True)
@@ -361,11 +434,6 @@ def fetch_yahoo(tickers, start: str = "2020-01-01", end: str | None = None) -> p
 def adjust_demergers(px: pd.DataFrame, events: dict) -> pd.DataFrame:
     """Back-adjust prices before each ex-date by the observed close ratio, so the spin-off
     is not a loss. That day's market move is lost too (ratio method, as for unpaid dividends)."""
-    px = px.copy()
-    for ticker, ex in events.items():
-        ex = pd.Timestamp(ex)
-        if ticker not in px or not (px.index[0] < ex <= px.index[-1]):
-            continue
-        before, after = px.loc[px.index < ex, ticker], px.loc[px.index >= ex, ticker]
-        px.loc[px.index < ex, ticker] = before * (after.iloc[0] / before.iloc[-1])
-    return px
+    actions = pd.DataFrame({"ticker": list(events), "ex_date": pd.to_datetime(list(events.values())),
+                            "method": "ratio", "factor": float("nan")})
+    return apply_corporate_actions(px, actions)[0]

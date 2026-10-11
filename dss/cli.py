@@ -16,6 +16,7 @@ import sys
 import pandas as pd
 
 from . import config, pipeline
+from .numfmt import num, pct
 from .data import loaders
 
 
@@ -99,29 +100,31 @@ def main(argv=None) -> int:
             for x in s["facts"]:
                 print(f"     - {x}")
             print(f"     => {s['result']}")
-        print(f"\nДоля рисковых активов: {d.risky_share:.1%}; USD-хедж: {d.usd_hedge_share:.1%} безрисковой части")
-        print(f"Ожидаемая волатильность: {d.exp_vol:.1%}; VaR95 1 мес.: {d.var95_1m:.1%}\n")
+        print(f"\nДоля рисковых активов: {pct(d.risky_share, 1)}; USD-хедж: {pct(d.usd_hedge_share, 1)} безрисковой части")
+        print(f"Ожидаемая волатильность: {pct(d.exp_vol, 1)}; VaR95 1 мес.: {pct(d.var95_1m, 1)}\n")
         with pd.option_context("display.width", 140):
-            print(d.allocation[d.allocation.weight > 0.0005][["weight", "signal", "cluster"]].round(3))
+            print(d.allocation[d.allocation.weight > 0.0005][["weight", "signal", "cluster"]]
+                  .to_string(float_format=lambda v: num(v, 3), na_rep="—"))
         for w in d.warnings:
             print("! " + w)
     elif a.cmd == "sensitivity":
         sens = pipeline.rule_sensitivity(r)
         with pd.option_context("display.width", 200, "display.max_columns", 20, "display.max_colwidth", 70):
             print("Чувствительность к коэффициентам (выход — доля рисковых активов или USD-хедж):")
-            print(sens["coefficients"].to_string(float_format=lambda v: f"{v:.3f}"), "\n")
+            print(sens["coefficients"].to_string(float_format=lambda v: num(v, 3), na_rep="—"), "\n")
             print("Монотонность правил:")
-            print(sens["monotonicity"].to_string(float_format=lambda v: f"{v:.1f}"), "\n")
+            print(sens["monotonicity"].to_string(float_format=lambda v: num(v, 1), na_rep="—"), "\n")
             print(f"Доля рисковых активов по P(рецессии) и сценарию (фаза «{r.macro.phase}»):")
-            print(sens["risk_grid"].to_string(float_format=lambda v: f"{v:.3f}"))
+            print(sens["risk_grid"].rename(index=lambda v: num(v, 1)).to_string(float_format=lambda v: num(v, 3), na_rep="—"))
     elif a.cmd == "significance":
         sharpe, dm = pipeline.significance_tables(r)
         with pd.option_context("display.width", 200, "display.max_columns", 20):
+            print(f"Безрисковая ставка {pct(r.settings.risk_free, 1)} ({r.settings.risk_free_note}).")
             print(f"Шарп стратегий, блочный бутстреп ({r.sharpe_tests.attrs['n_boot']} повторов, "
                   f"блоки {r.sharpe_tests.attrs['block']} дн.):")
-            print(sharpe.to_string(float_format=lambda v: f"{v:.3f}"), "\n")
+            print(sharpe.to_string(float_format=lambda v: num(v, 3), na_rep="—"), "\n")
             print("Диболд–Мариано против наивного прогноза r̂ = 0 (DM < 0 — модель точнее):")
-            print(dm.to_string(float_format=lambda v: f"{v:.3f}"))
+            print(dm.to_string(float_format=lambda v: num(v, 3), na_rep="—"))
     else:
         from .report import build_report
         with open(a.output, "w", encoding="utf-8") as fh:

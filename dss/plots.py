@@ -14,6 +14,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
 
+from .numfmt import num  # noqa: E402
+
 NAVY, TEXT, MUTED, GRID = "#14213D", "#1F2937", "#5B6576", "#D9DEE6"
 M1, M2, M3, M4, GOLD = "#1F5FAD", "#0F8B8D", "#7A4EA3", "#C2700E", "#E0A526"
 SERIES = [M1, M4, M2, M3, GOLD, "#8A93A3", "#B03A48", "#3E7C59"]
@@ -66,7 +68,7 @@ def importance(series: pd.Series) -> str:
     fig, ax = plt.subplots(figsize=(4.6, 3.4))
     ax.barh(s.index, s.values, color=M1)
     for i, v in enumerate(s.values):
-        ax.text(v + 0.004, i, f"{v:.2f}", va="center", fontsize=8, color=TEXT)
+        ax.text(v + 0.004, i, f"{num(v, 2)}", va="center", fontsize=8, color=TEXT)
     ax.set_title("Важность признаков (Random Forest)")
     ax.grid(axis="y", visible=False)
     return to_b64(fig)
@@ -127,7 +129,7 @@ def heatmap(corr: pd.DataFrame, title: str, cmap="Blues") -> str:
     for i in range(len(corr) if len(corr) <= 8 else 0):
         for j in range(len(corr)):
             v = corr.values[i, j]
-            ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=8,
+            ax.text(j, i, f"{num(v, 2)}", ha="center", va="center", fontsize=8,
                     color="white" if v > 0.75 else TEXT)
     ax.grid(False)
     ax.set_title(title)
@@ -140,7 +142,7 @@ def r2_bars(reg: pd.DataFrame) -> str:
     cols = [M2 if v >= 0.5 else "#B03A48" for v in reg["R2"]]
     ax.bar(reg.index, reg["R2"], color=cols, width=0.6)
     for i, v in enumerate(reg["R2"]):
-        ax.text(i, v + 0.02, f"{v:.2f}", ha="center", fontsize=9, color=TEXT)
+        ax.text(i, v + 0.02, f"{num(v, 2)}", ha="center", fontsize=9, color=TEXT)
     ax.set_ylim(0, 1.05)
     ax.set_title("Линейный тренд: R² по валютам")
     ax.grid(axis="x", visible=False)
@@ -152,7 +154,7 @@ def fx_risk(comp: pd.DataFrame, total: float) -> str:
     s = comp["risk"].sort_values()
     cols = ["#B03A48" if v >= 0.66 else GOLD if v >= 0.4 else M2 for v in s.values]
     ax.barh([f"{c}/KZT" for c in s.index], s.values, color=cols)
-    ax.axvline(total, color=NAVY, lw=2, label=f"Индекс = {total:.2f}")
+    ax.axvline(total, color=NAVY, lw=2, label=f"Индекс = {num(total, 2)}")
     ax.set_xlim(0, 1)
     ax.set_title("Компоненты индекса валютного риска")
     ax.legend(fontsize=8, loc="lower right")
@@ -186,7 +188,7 @@ def memberships(U: pd.DataFrame) -> str:
     for i in range(U.shape[0]):
         for j in range(U.shape[1]):
             v = U.values[i, j]
-            ax.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=8, color="white" if v > 0.6 else TEXT)
+            ax.text(j, i, f"{num(v, 2)}", ha="center", va="center", fontsize=8, color="white" if v > 0.6 else TEXT)
     ax.grid(False)
     ax.set_title("Fuzzy C-means: матрица U")
     return to_b64(fig)
@@ -249,7 +251,7 @@ def allocation(alloc: pd.DataFrame) -> str:
     labels = [i.replace("Безрисковая часть: ", "") for i in a.index]
     ax.barh(labels, a["weight"] * 100, color=cols)
     for i, v in enumerate(a["weight"] * 100):
-        ax.text(v + 0.4, i, f"{v:.1f}%", va="center", fontsize=8)
+        ax.text(v + 0.4, i, f"{num(v, 1)}%", va="center", fontsize=8)
     ax.set_title("Рекомендуемая структура портфеля, %")
     ax.grid(axis="y", visible=False)
     return to_b64(fig)
