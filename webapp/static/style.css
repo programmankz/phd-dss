@@ -105,3 +105,19 @@ pre { background: var(--surface); border: 1px solid var(--line); border-radius: 
 details.sens { padding: 10px 16px; margin: 22px 0; }
 details.sens > summary { cursor: pointer; }
 details.sens > summary h2 { margin: 0; }
+/* Print / "Save as PDF" (Sec. 11: PDF export of the report and of any screen) */
+@media print {
+  @page { size: A4; margin: 14mm 12mm; }
+  body { background: #fff; font-size: 11pt; }
+  .side, .controls, .btn, .print-hide { display: none !important; }
+  .shell { display: block; }
+  main { max-width: none; padding: 0; }
+  h2 { break-before: page; break-after: avoid; }
+  main > h2:first-of-type, .chain + h2 { break-before: auto; }
+  h3 { break-after: avoid; }
+  .fig, .kpi, .link, tr, .warn, .demo { break-inside: avoid; }
+  .tbl { overflow: visible; }
+  .chain { grid-template-columns: repeat(2, 1fr); }
+  details.sens { display: block; } details.sens > summary { list-style: none; }
+  a { color: inherit; text-decoration: none; }
+}

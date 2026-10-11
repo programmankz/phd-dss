@@ -139,3 +139,30 @@ def test_web_error_page_is_readable():
     body = resp.get_data(as_text=True)
     assert resp.status_code == 500 and "тестовый сбой" in body and "сбросьте кэш" in body
     assert "Traceback" not in body
+
+
+def test_export_tables_xlsx_and_zip():
+    import io
+    import zipfile
+
+    from dss import export
+    with isolated():
+        r = pipeline.run(config.Settings())
+        frames = export.tables(r)
+        data, ext, mime = export.export(r, "zip")
+        resp = _client().get("/export")
+    assert len(frames) >= 25 and all(len(name) <= 31 for name in frames)
+    assert "III Табл. 2 A3" in frames and "IV Диболд–Мариано" in frames
+    assert np.isclose(frames["Решение"]["weight"].sum(), 1.0)
+    z = zipfile.ZipFile(io.BytesIO(data))
+    assert ext == "zip" and len(z.namelist()) == len(frames)
+    assert z.read(z.namelist()[0]).startswith(b"\xef\xbb\xbf")          # BOM: Excel reads Cyrillic
+    assert resp.status_code == 200 and "attachment" in resp.headers["Content-Disposition"]
+    if export.excel_available():
+        import pandas as pd
+        xlsx, ext, _ = export.export(r, "xlsx")
+        book = pd.read_excel(io.BytesIO(xlsx), sheet_name=None, index_col=0)
+        assert ext == "xlsx" and list(book) == list(frames)
+        assert resp.mimetype == export.XLSX
+    else:
+        assert resp.mimetype == "application/zip"
