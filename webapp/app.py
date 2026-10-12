@@ -156,7 +156,7 @@ def clusters_page():
     c["img_pca"] = plots.asset_clusters(r.clusters)
     c["img_u"] = plots.memberships(r.clusters.U)
     c["img_k"] = plots.k_selection(r.clusters.k_selection)
-    c["img_corr"] = plots.heatmap(r.prices.pct_change().corr().round(2), "Корреляции доходностей", "Purples")
+    c["img_corr"] = plots.heatmap(r.prices.pct_change().corr().round(2), "Корреляции доходностей", "Greys")
     cl = r.clusters
     ft = cl.features.rename(columns={"ann_return": "Доходн., год", "ann_vol": "Волат., год", "sharpe": "Шарп",
                                      "max_dd": "Макс. просадка", "beta": "Бета", "mom_6m": "Импульс 6 мес."})
