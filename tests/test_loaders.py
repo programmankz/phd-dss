@@ -210,3 +210,26 @@ def test_demerger_is_back_adjusted_not_a_loss():
     assert abs(r.loc[idx[2], "T"]) < 1e-12                    # no -41% jump on the ex-date
     assert np.allclose(r["T"].values[[0, 2]], [0.02, 0.02])   # other returns unchanged
     assert adj["U"].equals(px["U"]) and adj.loc[idx[2]:, "T"].equals(px.loc[idx[2]:, "T"])
+
+
+def test_kase_fetch_reads_chart_feed_and_skips_unknown_tickers():
+    import json
+    import urllib.error
+
+    def fake_get(url, timeout=30):
+        if "symbol=NOPE" in url:
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        if "symbol=EMPTY" in url:
+            return json.dumps({"s": "no_data"}).encode()
+        day = 86400 * 19000                                   # 2022-01-08 .. 2022-01-10
+        t = [day, day + 86400 * 2] if "symbol=A" in url else [day + 86400, day + 86400 * 2]
+        return json.dumps({"s": "ok", "t": t, "c": [10.0, 11.0]}).encode()
+
+    real_get, loaders._get = loaders._get, fake_get
+    try:
+        px = loaders.fetch_kase(["A", "B", "NOPE", "EMPTY"])
+    finally:
+        loaders._get = real_get
+    assert list(px.columns) == ["A", "B"] and px.index.name == "Date"
+    assert px["A"].tolist() == [10.0, 10.0, 11.0]            # gap day forward-filled
+    assert np.isnan(px["B"].iloc[0])                          # no back-fill before the first trade

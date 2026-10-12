@@ -14,11 +14,12 @@
 <pre>python -m dss.cli fetch gdp        # IMF WEO (при отказе — World Bank WDI) → data/gdp_growth.csv
 python -m dss.cli fetch fx         # НБ РК, дневные курсы → data/fx_rates.csv (долго, с докачкой)
 python -m dss.cli fetch nse        # Yahoo Finance, 20 акций NSE → data/prices_nse.csv
+python -m dss.cli fetch kase       # графики kase.kz, 9 акций → data/prices_kase.csv (+ секторы)
 python -m dss.cli warmup           # предварительный расчёт всех модулей</pre>
 <table><thead><tr><th>Файл</th><th>Формат</th><th>Модуль</th></tr></thead><tbody>
 <tr><td><code>gdp_growth.csv</code></td><td>country, 1980, …, 2024 — рост реального ВВП, %</td><td>I</td></tr>
 <tr><td><code>fx_rates.csv</code></td><td>Date, USD, EUR, CNY, RUB — тенге за единицу</td><td>II</td></tr>
-<tr><td><code>prices_kase.csv</code></td><td>Date, HSBK, KSPI, … — цены закрытия (экспорт с kase.kz)</td><td>III, IV</td></tr>
+<tr><td><code>prices_kase.csv</code></td><td>Date, HSBK, KSPI, … — цены закрытия (<code>fetch kase</code> или экспорт с kase.kz)</td><td>III, IV</td></tr>
 <tr><td><code>fundamentals_kase.csv</code></td><td>ticker, sector, PB, PE</td><td>III</td></tr>
 <tr><td><code>prices_nse.csv</code></td><td>Date, HDFCBANK.NS, … — цены закрытия</td><td>III, IV</td></tr>
 </tbody></table>

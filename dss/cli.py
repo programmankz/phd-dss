@@ -1,6 +1,6 @@
 """Command-line interface.
 
-    python -m dss.cli fetch gdp|fx|nse     download real data into ./data
+    python -m dss.cli fetch gdp|fx|nse|kase  download real data into ./data
     python -m dss.cli warmup               compute and cache all modules
     python -m dss.cli decide [options]     print the recommendation
     python -m dss.cli report -o out.html   write the HTML report
@@ -30,8 +30,9 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="dss", description="СППР управления инвестиционным портфелем")
     sub = p.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch", help="загрузить реальные данные")
-    f.add_argument("what", choices=["gdp", "fx", "nse"])
+    f.add_argument("what", choices=["gdp", "fx", "nse", "kase"])
     f.add_argument("--start", default=None)
+    f.add_argument("--tickers", default=None, help="kase/nse: тикеры через запятую вместо набора по умолчанию")
     for name in ("warmup", "decide", "report", "sensitivity", "significance"):
         s = sub.add_parser(name)
         s.add_argument("--profile", default="moderate", choices=list(config.PROFILES))
@@ -61,8 +62,20 @@ def main(argv=None) -> int:
         elif a.what == "fx":
             df = loaders.fetch_nbk(start=a.start or "2000-01-01")
             print(f"fx_rates.csv: {len(df)} дней, {df.index.min():%Y-%m-%d} – {df.index.max():%Y-%m-%d}")
+        elif a.what == "kase":
+            tickers = a.tickers.split(",") if a.tickers else loaders.KASE_TICKERS
+            df = loaders.fetch_kase(tickers, start=a.start or "2019-01-01")
+            df.to_csv(out / "prices_kase.csv")
+            print(f"prices_kase.csv: {df.shape[1]} бумаг, {df.index.min():%Y-%m-%d} – {df.index.max():%Y-%m-%d}; "
+                  f"общая история с {df.dropna().index.min():%Y-%m-%d}")
+            fund = out / "fundamentals_kase.csv"
+            if not fund.exists():  # sectors only: kase.kz has no P/B, P/E feed; fill them in by hand
+                pd.DataFrame({"ticker": df.columns, "sector": [loaders.KASE_SECTORS.get(t, "") for t in df.columns],
+                              "PB": None, "PE": None}).to_csv(fund, index=False)
+                print("fundamentals_kase.csv: секторы записаны, P/B и P/E пусты — заполните вручную")
         else:
-            df = loaders.fetch_yahoo(loaders.NSE_TICKERS, start=a.start or "2020-01-01")
+            tickers = a.tickers.split(",") if a.tickers else loaders.NSE_TICKERS
+            df = loaders.fetch_yahoo(tickers, start=a.start or "2020-01-01")
             df.to_csv(out / "prices_nse.csv")
             print(f"prices_nse.csv: {df.shape}")
         return 0
