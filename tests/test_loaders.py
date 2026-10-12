@@ -200,3 +200,13 @@ def test_gdp_fetch_falls_back_to_world_bank_when_imf_refuses():
     assert "World Bank" in source
     assert list(df.index) == ["Kazakhstan"]            # aggregate "World" dropped
     assert df.loc["Kazakhstan", 2015] == 1.2 and 2016 not in df.columns
+
+
+def test_demerger_is_back_adjusted_not_a_loss():
+    idx = pd.bdate_range("2025-10-10", periods=4)            # ex-date is the 3rd day
+    px = pd.DataFrame({"T": [100.0, 102.0, 60.0, 61.2], "U": [10.0, 11.0, 12.0, 13.0]}, index=idx)
+    adj = loaders.adjust_demergers(px, {"T": idx[2], "MISSING": idx[2]})
+    r = adj.pct_change().iloc[1:]
+    assert abs(r.loc[idx[2], "T"]) < 1e-12                    # no -41% jump on the ex-date
+    assert np.allclose(r["T"].values[[0, 2]], [0.02, 0.02])   # other returns unchanged
+    assert adj["U"].equals(px["U"]) and adj.loc[idx[2]:, "T"].equals(px.loc[idx[2]:, "T"])
