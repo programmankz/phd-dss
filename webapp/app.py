@@ -193,6 +193,14 @@ def report():
                     headers={"Content-Disposition": "attachment; filename=dss_report.html"})
 
 
+@app.route("/export")
+def export_tables():
+    from dss.export import export
+    data, ext, mime = export(context("export")["r"])
+    return Response(data, mimetype=mime,
+                    headers={"Content-Disposition": f"attachment; filename=dss_tables.{ext}"})
+
+
 @app.route("/refresh")
 def refresh():
     pipeline.clear_cache()
