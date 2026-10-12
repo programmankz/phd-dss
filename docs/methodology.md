@@ -47,7 +47,7 @@
 | Признаки RSI(14), MACD(12–26), ATR(14), Bollinger, OBV, SMA(14), объём | `signals.asset_features` | ATR по ценам закрытия, если нет High/Low; OBV — если есть объёмы |
 | MinMax-нормализация на обучающей выборке | `signals._fit_predict` | |
 | Хронологическое разбиение 80/20 | `config.PROTOCOLS["paper"]` | Режим «как в статье»; по умолчанию — walk-forward (`config.PROTOCOLS["walk_forward"]`) |
-| 11 моделей | `signals.make_model`, `_keras_model` | Глубокие — при установленном TensorFlow |
+| 11 моделей | `signals.make_model`, `_keras_model` | Глубокие — при установленном TensorFlow: окна 60 дней, Adam(1e-3), early stopping 10 по последним по времени 10 % обучающих окон; seed 42 и детерминированные операции TF; в walk-forward модель с предыдущего блока дообучается, а не обучается заново |
 | Сглаживание 10 прогнозов, ранги Rank/N | `signals.run`, `signals.rank_signal` | |
 | max wᵀs/√(wᵀΣw), Σw = 1, 0 ≤ w ≤ 1, SLSQP, ковариация 252 дня | `portfolio.max_signal_to_risk` | + лимиты на актив и кластеры |
 | Стратегии Signal Weighted, Max Signal-to-Risk, Min Variance, Equal | `portfolio.backtest` | + издержки и выбор частоты ребалансировки |

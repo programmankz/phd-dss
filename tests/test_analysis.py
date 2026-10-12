@@ -138,3 +138,58 @@ def test_paper_protocol_is_one_chronological_split():
     assert r.predictions["ridge"].index.is_monotonic_increasing and len(dates) > 50
     wf = config.PROTOCOLS["walk_forward"]
     assert (wf["train_share"], wf["retrain_every"]) == (0.5, 126) and p["retrain_every"] == 0
+
+
+def test_sequence_windows_have_no_gap_before_the_test_block():
+    """The deep models see the last 60 days before each forecast, including the
+    eve of the block, whose target is not yet known (so it is not in ``train``)."""
+    from sklearn.preprocessing import MinMaxScaler
+
+    from dss import signals
+    rng = np.random.default_rng(7)
+    idx = pd.bdate_range("2022-01-03", periods=200)
+    prices = pd.DataFrame(100 * np.exp(np.cumsum(rng.normal(0, 0.01, (200, 3)), axis=0)), index=idx,
+                          columns=list("abc"))
+    panel = signals.build_panel(prices)
+    cols = signals.feature_columns(panel)
+    dates = np.sort(panel["Date"].unique())
+    i = next(k for k in range(100, 120) if pd.Timestamp(dates[k]).weekday() != 0)
+    block = dates[i:i + 10]                               # mid-week start: the eve is the day before
+    history = panel[panel["Date"] < block[0]]
+    train = history[history["Date"] < block[0] - np.timedelta64(1, "D")].dropna(subset=["target"])
+    test = panel[panel["Date"].isin(block)]
+    scaler = MinMaxScaler().fit(train[cols])
+    X, rows = signals._test_windows(history, test, cols, scaler, 20)
+    assert X.shape == (len(test), 20, len(cols)) and set(rows) == set(test.index)
+    first = panel.loc[rows[0]]                             # first test day of the first asset
+    prev = history[history["asset"] == first["asset"]].iloc[-1]
+    assert np.allclose(X[0, -2], scaler.transform(prev[cols].to_frame().T.astype(float))[0])  # the eve itself
+    assert np.allclose(X[0, -1], scaler.transform(first[cols].to_frame().T.astype(float))[0])
+
+
+def test_deep_models_run_when_tensorflow_is_installed():
+    """FR-IV-03: RNN, LSTM, CNN-LSTM and LSTM-MLP train and forecast every test
+    row, reproducibly (seed 42). Small data and 2 epochs keep it under a minute."""
+    from dss import signals
+    if not signals.tensorflow_available():
+        try:
+            import pytest
+            pytest.skip("TensorFlow is not installed (pip install tensorflow)")
+        except ImportError:                      # tests/run.py without pytest
+            return
+    rng = np.random.default_rng(8)
+    idx = pd.bdate_range("2022-01-03", periods=260)
+    prices = pd.DataFrame(100 * np.exp(np.cumsum(rng.normal(0, 0.01, (260, 4)), axis=0)), index=idx,
+                          columns=list("abcd"))
+    old = signals.DL_EPOCHS
+    signals.DL_EPOCHS = 2
+    try:
+        r = signals.run(prices, signals.DL_MODELS, train_share=0.6, retrain_every=40, lookback=20)
+        again = signals.run(prices, ("rnn",), train_share=0.6, retrain_every=40, lookback=20)
+    finally:
+        signals.DL_EPOCHS = old
+    assert r.models == signals.DL_MODELS
+    for m in signals.DL_MODELS:
+        pred = r.predictions[m]
+        assert pred.notna().all().all() and len(pred) == len(r.ranks), m
+    assert np.allclose(r.predictions["rnn"], again.predictions["rnn"], atol=1e-6)

@@ -8,7 +8,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-failed = 0
+failed = skipped = 0
 for path in sorted(HERE.glob("test_*.py")):
     module = importlib.import_module(path.stem)
     for name in sorted(n for n in dir(module) if n.startswith("test_")):
@@ -20,5 +20,11 @@ for path in sorted(HERE.glob("test_*.py")):
             failed += 1
             print(f"FAIL  {path.stem}.{name}")
             traceback.print_exc()
-print(f"\n{failed} failed" if failed else "\nall passed")
+        except BaseException as exc:      # pytest.skip() raises a BaseException subclass
+            if type(exc).__name__ != "Skipped":
+                raise
+            skipped += 1
+            print(f"skip  {path.stem}.{name}: {exc}")
+note = f" ({skipped} skipped)" if skipped else ""
+print(f"\n{failed} failed{note}" if failed else f"\nall passed{note}")
 sys.exit(1 if failed else 0)
