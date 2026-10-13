@@ -63,6 +63,7 @@ python -m dss.cli significance --universe nse --protocol paper --cov sample --re
 python -m dss.cli report -o report.html                              # автономный HTML-отчёт
 python -m dss.cli significance       # 95% ДИ Шарпа стратегий и тест Диболда–Мариано (ФТ-IV-13)
 python -m dss.cli sensitivity        # чувствительность и монотонность правил интеграции
+python scripts/reproduce.py          # воспроизведение статей [A1]–[A4] → docs/reproduction.md (≈ 2 мин)
 ```
 
 ## Тесты и проверка стиля
@@ -90,6 +91,10 @@ GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) на к�
 | `prices_nse.csv` | `Date,HDFCBANK.NS,…` | `python -m dss.cli fetch nse` (нужен `yfinance`) | III, IV |
 | `corporate_actions.csv` | `ticker,ex_date,method,factor,note` | необязательно, вручную: сплиты, выделения ([SETUP, п. 4.6](docs/SETUP.md#46-корпоративные-события--corporate_actionscsv-необязательно)) | III, IV |
 
+## Результаты воспроизведения статей
+
+Сравнение чисел СППР с опубликованными в [A1]–[A4] на реальных данных, оговорки по данным и вопросы к автору — [docs/reproduction.md](docs/reproduction.md).
+
 ## Структура
 
 ```
@@ -108,10 +113,13 @@ dss/
 webapp/            Flask-интерфейс (6 страниц)
 tests/             test_core — научные инварианты (нет утечки, ограничения, табл. 9–10);
                    test_loaders — проверка CSV; test_analysis — правила интеграции и тесты значимости;
-                   test_system — конвейер целиком и веб-экраны
+                   test_system — конвейер целиком, НФТ-01 и веб-экраны; test_reproduce — воспроизведение статей
 docs/progress.md   состояние работ по ТЗ (docs/techspecs.md) и принятые допущения
 docs/methodology.md  соответствие кода статьям и известные расхождения
-scripts/make_screenshots.py  скриншоты интерфейса для презентации
+docs/reproduction.md воспроизведение статей [A1]–[A4] на реальных данных (python scripts/reproduce.py)
+docs/results/        таблицы воспроизведения в CSV
+scripts/reproduce.py         воспроизведение статей [A1]–[A4]
+scripts/make_screenshots.py  скриншоты интерфейса (KASE — docs/screenshots/, NSE — docs/screenshots/nse/)
 ```
 
 ## Опциональные зависимости
