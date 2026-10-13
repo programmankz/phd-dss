@@ -570,7 +570,8 @@ def reproduce_a3(raw: pd.DataFrame, fundamentals: pd.DataFrame | None) -> Articl
         "`clustering.cluster_assets` (k выбирается по силуэту PAM в диапазоне 2…max(2, min(6, n/3))) и "
         "`clustering.cluster_portfolio_backtest`: ежемесячная перекластеризация по окну 252 дня; K-means и K-medoids "
         "берут лучшую по Шарпу бумагу каждого кластера с равными весами, FCM распределяет бюджет 1/k по uᵢⱼᵐ·max(Шарп, 0); "
-        f"издержки {num(st.tc_bps, 0)} б.п.; безрисковая ставка {pct(st.risk_free, 0)} (как в `pipeline.run`). "
+        f"издержки {num(st.tc_bps, 0)} б.п.; безрисковая ставка {pct(st.risk_free, 0)} ({st.risk_free_note}; как в "
+        "`pipeline.run`). "
         "Первые 252 дня нет ни одной перекластеризации, и все стратегии держат равные веса — эти дни входят в "
         "показатели всех строк.",
         "",
@@ -842,7 +843,8 @@ CAVEATS = [
     "Цены NSE в файле идут до 10.2026, а [A4] охватывает 2020–2025; расчёт [A4] выполнен на обрезанных по "
     f"{A4_CUT} данных и на всём файле. `TMPV.NS` заменяет `TATAMOTORS.NS` и пересчитан на выделение TMCV.",
     "Секторы NSE берутся из встроенной таблицы II [A4] (`loaders.NSE_SECTORS`), P/B и P/E для KASE отсутствуют.",
-    "Безрисковая ставка 5 % (`config.RISK_FREE`) восстановлена по табл. IV [A4] для NSE; для KASE она условна.",
+    "Безрисковая ставка 5 % (`config.RISK_FREE`) восстановлена по табл. IV [A4] для NSE; для KASE в "
+    "`config.RISK_FREE_BY_UNIVERSE` стоит заглушка (ставка НБ РК не задана), поэтому временно тоже 5 %.",
 ]
 FIXED_QUESTIONS = [
     "[Данные] Базовая ставка НБ РК (значение и источник) для безрисковой ставки KASE (ФТ-IV-12) — сейчас для "
@@ -915,7 +917,7 @@ def main(argv=None) -> int:
     for d in (rates, gdp, nse, kase):
         if d.is_demo:
             raise SystemExit(f"Источник {d.source} — демо-данные; воспроизведение возможно только на реальных CSV")
-    raw_kase = loaders._dated_frame(loaders.data_dir() / "prices_kase.csv", "Date,<тикер1>,…")
+    raw_kase, _ = loaders.raw_prices("kase")
     fund_kase = loaders.load_fundamentals("kase", list(raw_kase.columns)).frame.select_dtypes("number")
     fund_nse = loaders.load_fundamentals("nse", list(nse.frame.columns)).frame.select_dtypes("number")
     arts = {}

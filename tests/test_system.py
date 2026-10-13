@@ -139,3 +139,45 @@ def test_web_error_page_is_readable():
     body = resp.get_data(as_text=True)
     assert resp.status_code == 500 and "тестовый сбой" in body and "сбросьте кэш" in body
     assert "Traceback" not in body
+
+
+def test_two_cold_runs_give_identical_numbers():
+    """NFR-01: a repeated run from scratch (no memory or disk cache) reproduces the decision
+    weights, the Sharpe ratios and the cluster labels to 4 decimal places."""
+    st = config.Settings(models=("ridge",))
+    runs = []
+    for _ in range(2):
+        pipeline._MEM.clear()
+        old = pipeline.CACHE_DIR
+        pipeline.CACHE_DIR = Path(tempfile.mkdtemp(prefix="dss-nfr01-"))
+        try:
+            with data_dir({}):
+                r = pipeline.run(st)
+                runs.append((r.decision.allocation["weight"].round(4), r.backtest.metrics["sharpe"].round(4),
+                             {k: v.tolist() for k, v in r.clusters.labels.items()}, round(r.macro.recession_prob, 4)))
+        finally:
+            pipeline.CACHE_DIR = old
+    (w1, s1, l1, p1), (w2, s2, l2, p2) = runs
+    assert w1.equals(w2) and s1.equals(s2) and l1 == l2 and p1 == p2
+
+
+def test_report_and_console_use_decimal_comma():
+    """Russian number format in the HTML report, decision texts and console output; CSV stays machine-readable."""
+    import contextlib
+    import io
+    import re
+
+    from dss import cli
+    from dss.report import build_report
+    with isolated():
+        r = pipeline.run(config.Settings())
+        cells = re.findall(r"<td class='num'>([^<]*)</td>", build_report(r))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.main(["decide"])
+            cli.main(["significance"])
+    decimal_point = re.compile(r"\d\.\d")
+    assert cells and not any(decimal_point.search(c) for c in cells)
+    texts = [x for s in r.decision.steps for x in s["facts"] + s["trail"] + [s["result"]]] + r.decision.warnings
+    assert not any(decimal_point.search(t) for t in texts), texts
+    assert "," in out.getvalue() and not decimal_point.search(out.getvalue()), out.getvalue()

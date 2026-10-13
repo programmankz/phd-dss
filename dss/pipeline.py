@@ -22,6 +22,7 @@ import pandas as pd
 from . import clustering, fx, integration, macro, portfolio, significance, signals
 from .config import PROFILES, PROTOCOLS, Settings
 from .data import DataError, load_fundamentals, load_fx, load_gdp, load_prices
+from .numfmt import num
 
 CACHE_DIR = Path(os.environ.get("DSS_CACHE_DIR", ".dss_cache"))
 _MEM: dict = {}
@@ -160,7 +161,7 @@ def rule_sensitivity(r: RunResult) -> dict:
         float(r.macro.scenario_path(sc).iloc[0]), r.fx.fx_risk)
 
 
-def significance_tables(r: RunResult, fmt=lambda v: f"{v:.2f}") -> tuple[pd.DataFrame, pd.DataFrame]:
+def significance_tables(r: RunResult, fmt=lambda v: num(v, 2)) -> tuple[pd.DataFrame, pd.DataFrame]:
     """User-facing (Russian) tables of the FR-IV-13 tests; ``fmt`` formats CI bounds."""
     sh, dm = r.sharpe_tests, r.forecast_tests
 

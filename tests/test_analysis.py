@@ -138,3 +138,20 @@ def test_paper_protocol_is_one_chronological_split():
     assert r.predictions["ridge"].index.is_monotonic_increasing and len(dates) > 50
     wf = config.PROTOCOLS["walk_forward"]
     assert (wf["train_share"], wf["retrain_every"]) == (0.5, 126) and p["retrain_every"] == 0
+
+
+# ---------------------------------------------------------------- risk-free rate per universe (FR-IV-12)
+def test_risk_free_rate_depends_on_universe():
+    assert config.Settings(universe="nse").risk_free == config.RISK_FREE == 0.05
+    kase = config.Settings(universe="kase")
+    assert config.RISK_FREE_BY_UNIVERSE["kase"] is None              # placeholder until the NBK rate is given
+    assert kase.risk_free == config.RISK_FREE and "заглушка" in kase.risk_free_note
+    assert config.Settings(universe="kase", risk_free=0.02).risk_free_note == "задана вручную"
+    old = config.RISK_FREE_BY_UNIVERSE["kase"]
+    config.RISK_FREE_BY_UNIVERSE["kase"] = 0.1
+    try:
+        st = config.Settings(universe="kase")
+        assert st.risk_free == 0.1 and "заглушка" not in st.risk_free_note
+        assert st.key() != config.Settings(universe="kase", risk_free=0.05).key()     # cache keys differ
+    finally:
+        config.RISK_FREE_BY_UNIVERSE["kase"] = old

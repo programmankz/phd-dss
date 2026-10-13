@@ -233,3 +233,36 @@ def test_kase_fetch_reads_chart_feed_and_skips_unknown_tickers():
     assert list(px.columns) == ["A", "B"] and px.index.name == "Date"
     assert px["A"].tolist() == [10.0, 10.0, 11.0]            # gap day forward-filled
     assert np.isnan(px["B"].iloc[0])                          # no back-fill before the first trade
+
+
+# ------------------------------------------------------------------ corporate actions
+def test_corporate_actions_file_adjusts_any_universe():
+    px = prices_csv(n_days=320, n_assets=6)
+    df = pd.read_csv(pd.io.common.StringIO(px), index_col=0)
+    ex = df.index[200]
+    df.loc[ex:, "T0"] *= 0.5                                   # a 2:1 split without adjustment
+    df.loc[ex:, "T1"] *= 0.6                                   # a spin-off
+    actions = (f"ticker,ex_date,method,factor,note\nT0,{ex},factor,0.5,split 2:1\nT1,{ex},ratio,,spin-off\n"
+               f"OTHER.NS,{ex},ratio,,ticker of another universe\nT2,1990-01-01,factor,2,before the data\n")
+    with data_dir({"prices_nse.csv": df.to_csv(), "corporate_actions.csv": actions}):
+        ds = loaders.load_prices("nse")
+    r = ds.frame.pct_change()
+    assert abs(r.loc[ex, "T0"]) < 0.05 and abs(r.loc[ex, "T1"]) < 1e-12   # no fake -50% / -40% day
+    assert ds.source.startswith("CSV: prices_nse.csv") and "корпоративные события: 2" in ds.source
+    raw = pd.read_csv(pd.io.common.StringIO(px), index_col=0)
+    assert np.allclose(ds.frame["T2"].to_numpy(), raw["T2"].to_numpy())  # out-of-range event skipped
+    again, n = loaders.apply_corporate_actions(ds.frame, loaders.validate_corporate_actions(
+        pd.read_csv(pd.io.common.StringIO(actions)).iloc[[1]]))
+    assert n == 1 and np.allclose(again["T1"], ds.frame["T1"])           # ratio method is idempotent
+
+
+def test_corporate_actions_are_validated():
+    ok = "ticker,ex_date,method,factor,note\n"
+    cases = [("ticker,date,method\nT0,2021-05-03,ratio\n", "нет столбцов ex_date"),
+             (ok + "T0,03.05.2021,ratio,,\n", "ex_date не распознана"),
+             (ok + "T0,2021-05-03,split,2,\n", "метод «split» не поддерживается"),
+             (ok + "T0,2021-05-03,factor,,\n", "требует положительного множителя"),
+             (ok + "T0,2021-05-03,ratio,,\nT0,2021-05-03,factor,2,\n", "указано несколько раз")]
+    for text, fragment in cases:
+        with data_dir({"prices_kase.csv": prices_csv(), "corporate_actions.csv": text}):
+            raises(lambda: loaders.load_prices("kase"), "corporate_actions.csv", fragment)

@@ -88,6 +88,7 @@ GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) на к�
 | `prices_kase.csv` | `Date,HSBK,KSPI,…` (цены закрытия) | `python -m dss.cli fetch kase` (графики kase.kz) или экспорт с kase.kz | III, IV |
 | `fundamentals_kase.csv` | `ticker,sector,PB,PE` | секторы — `fetch kase`; P/B, P/E — отчётность эмитентов | III |
 | `prices_nse.csv` | `Date,HDFCBANK.NS,…` | `python -m dss.cli fetch nse` (нужен `yfinance`) | III, IV |
+| `corporate_actions.csv` | `ticker,ex_date,method,factor,note` | необязательно, вручную: сплиты, выделения ([SETUP, п. 4.6](docs/SETUP.md#46-корпоративные-события--corporate_actionscsv-необязательно)) | III, IV |
 
 ## Структура
 

@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import config, pipeline, plots
+from . import config, numfmt, pipeline, plots
+from .numfmt import num, pct
 
 CSS_PATH = Path(__file__).resolve().parents[1] / "webapp" / "static" / "style.css"
 
@@ -15,7 +16,7 @@ CSS_PATH = Path(__file__).resolve().parents[1] / "webapp" / "static" / "style.cs
 def _tbl(df: pd.DataFrame, d: int = 3, pct=()) -> str:
     def f(c, v):
         if isinstance(v, float):
-            return f"{v * 100:.1f}%" if c in pct else f"{v:,.{d}f}".replace(",", " ")
+            return numfmt.pct(v, 1) if c in pct else numfmt.num(v, d)
         return html.escape(str(v))
     head = "<th></th>" + "".join(f"<th>{html.escape(str(c))}</th>" for c in df.columns)
     rows = "".join("<tr><th>" + html.escape(str(i)) + "</th>" +
@@ -36,10 +37,10 @@ def build_report(r) -> str:
         f"<ul>{''.join(f'<li>{html.escape(x)}</li>' for x in s['facts'])}</ul><div class='res'>{html.escape(s['result'])}</div></div>"
         for s, c in zip(d.steps, ("m1", "m2", "m3", "m4")))
     out = (f"<div class='link out'><div class='hd'><span class='rn m0'>✓</span><b>Решение</b></div>"
-           f"<div class='big'>{d.risky_share:.0%}</div><div class='cap'>в рисковых активах</div>"
-           f"<div class='row'><span>USD-хедж безрисковой части</span><b>{d.usd_hedge_share:.0%}</b></div>"
-           f"<div class='row'><span>Ожид. волатильность</span><b>{d.exp_vol:.1%}</b></div>"
-           f"<div class='row'><span>VaR 95%, 1 мес.</span><b>{d.var95_1m:.1%}</b></div></div>")
+           f"<div class='big'>{pct(d.risky_share, 0)}</div><div class='cap'>в рисковых активах</div>"
+           f"<div class='row'><span>USD-хедж безрисковой части</span><b>{pct(d.usd_hedge_share, 0)}</b></div>"
+           f"<div class='row'><span>Ожид. волатильность</span><b>{pct(d.exp_vol, 1)}</b></div>"
+           f"<div class='row'><span>VaR 95%, 1 мес.</span><b>{pct(d.var95_1m, 1)}</b></div></div>")
     alloc = d.allocation[d.allocation.weight > 0.0005][["weight", "signal", "cluster"]]
     alloc.columns = ["Вес", "Сигнал s", "Кластер"]
     demo = ("<div class='demo'><b>Демо-режим.</b> Часть данных синтетическая; результаты не являются "
@@ -47,7 +48,7 @@ def build_report(r) -> str:
     src = "".join(f"<tr><td>{html.escape(k)}</td><td>{html.escape(v)}</td></tr>" for k, v in r.sources.items())
     warns = "".join(f"<div class='warn'>{html.escape(w)}</div>" for w in r.data_errors + d.warnings)
     m, f, c, s, b = r.macro, r.fx, r.clusters, r.signals, r.backtest
-    sig_sharpe, sig_dm = pipeline.significance_tables(r)
+    sig_sharpe, sig_dm = pipeline.significance_tables(r)  # CI bounds already in Russian format
     sens = pipeline.rule_sensitivity(r)
     body = f"""
 <main style="max-width:1180px;margin:0 auto">
@@ -55,7 +56,8 @@ def build_report(r) -> str:
 <h1>Отчёт СППР: рекомендация по инвестиционному портфелю</h1>
 <p class="lede">Сформирован {dt.datetime.now():%d.%m.%Y %H:%M}. Профиль «{d.profile.label}», сценарий
 {html.escape(config.SCENARIOS[d.scenario]['label'])}, модели сигналов: {', '.join(st.models)}, ребалансировка {st.rebalance},
-издержки {st.tc_bps:.0f} б.п.</p>
+издержки {num(st.tc_bps, 0)} б.п., безрисковая ставка {pct(st.risk_free, 0)}
+({html.escape(st.risk_free_note)}).</p>
 <section class="chain">{steps}{out}</section>
 {warns}
 <h2>Рекомендуемая структура</h2>

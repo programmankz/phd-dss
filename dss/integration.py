@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from . import config
+from .numfmt import num, pct
 from .portfolio import covariance, feasible_limits, max_signal_to_risk
 
 PHASE_MULT = config.PHASE_RISK_MULT       # kept for backward compatibility
@@ -65,10 +66,10 @@ def risk_budget(profile: config.InvestorProfile, rec_prob: float, scenario: str,
     m_ph = rules.phase_mult.get(phase, 1.0)
     share = base * m_rec * m_sc * m_ph - (rules.neg_growth_cut if growth_next < 0 else 0.0)
     share = float(np.clip(share, profile.min_risky_share, profile.max_risky_share))
-    trail = [f"базовая доля рисковых активов ({profile.label.lower()} профиль) — {base:.0%}",
-             f"× (1 − {_num(rules.rec_penalty)}·P(рецессии)) = × {m_rec:.2f}",
-             f"× сценарий «{config.SCENARIOS[scenario]['label']}» = × {m_sc:.2f}",
-             f"× фаза цикла «{phase}» = × {m_ph:.2f}"]
+    trail = [f"базовая доля рисковых активов ({profile.label.lower()} профиль) — {pct(base, 0)}",
+             f"× (1 − {_num(rules.rec_penalty)}·P(рецессии)) = × {num(m_rec, 2)}",
+             f"× сценарий «{config.SCENARIOS[scenario]['label']}» = × {num(m_sc, 2)}",
+             f"× фаза цикла «{phase}» = × {num(m_ph, 2)}"]
     if growth_next < 0:
         trail.append(f"− {rules.neg_growth_cut * 100:g} п.п. за отрицательный прогноз роста")
     return share, trail
@@ -90,18 +91,18 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
     # ---- Module I -> risk budget
     risky, trail = risk_budget(profile, macro.recession_prob, sc, macro.phase, g_next, rules)
     steps.append({"module": "I", "title": "Макропрогноз → бюджет риска",
-                  "facts": [f"P(рецессии в {growth.index[0]} г.) = {macro.recession_prob:.0%} (Gradient Boosting)",
-                            f"прогноз роста ВВП {growth.index[0]} г. = {g_next:.2f}% (ARIMA{macro.extra['arima_order']}, сценарий {config.SCENARIOS[sc]['label']})",
+                  "facts": [f"P(рецессии в {growth.index[0]} г.) = {pct(macro.recession_prob, 0)} (Gradient Boosting)",
+                            f"прогноз роста ВВП {growth.index[0]} г. = {num(g_next, 2)}% (ARIMA{macro.extra['arima_order']}, сценарий {config.SCENARIOS[sc]['label']})",
                             f"фаза цикла: {macro.phase}"],
-                  "result": f"доля рисковых активов = {risky:.0%}", "trail": trail})
+                  "result": f"доля рисковых активов = {pct(risky, 0)}", "trail": trail})
 
     # ---- Module II -> safe part and FX hedge
     usd = fx_hedge(fx.fx_risk, rules)
     steps.append({"module": "II", "title": "Валютный риск → хедж безрисковой части",
-                  "facts": [f"индекс валютного риска = {fx.fx_risk:.2f} (режим: {fx.regime.lower()})",
-                            f"ожидаемое ослабление тенге к USD ≈ {fx.exp_depreciation:.1%} в год",
-                            f"USD, EUR, CNY — один фактор: PC1 объясняет {fx.pc1_share:.0%} дисперсии"],
-                  "result": f"в USD-инструментах {usd:.0%} безрисковой части", "trail": []})
+                  "facts": [f"индекс валютного риска = {num(fx.fx_risk, 2)} (режим: {fx.regime.lower()})",
+                            f"ожидаемое ослабление тенге к USD ≈ {pct(fx.exp_depreciation, 1)} в год",
+                            f"USD, EUR, CNY — один фактор: PC1 объясняет {pct(fx.pc1_share, 0)} дисперсии"],
+                  "result": f"в USD-инструментах {pct(usd, 0)} безрисковой части", "trail": []})
     if fx.fx_risk >= rules.fx_risk_warn:
         warns.append("Высокий валютный риск: рассмотрите увеличение валютного хеджа сверх модельного.")
 
@@ -114,16 +115,16 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
         wm, cc, relaxed = feasible_limits(labels.to_numpy(), wm, cc)
         if relaxed:
             warns.append(f"Лимиты профиля несовместимы со структурой кластеров и ослаблены до "
-                         f"≤ {cc:.0%} на кластер и ≤ {wm:.0%} на актив.")
+                         f"≤ {pct(cc, 0)} на кластер и ≤ {pct(wm, 0)} на актив.")
     elif cc < 1.0 / U.shape[1]:
         cc = 1.0 / U.shape[1] + 1e-6       # same relaxation as the optimiser's fuzzy constraints
         warns.append(f"Лимит профиля на кластер ниже 1/k при k = {U.shape[1]} нечётких кластерах "
-                     f"и ослаблен до {cc:.0%} по матрице U.")
+                     f"и ослаблен до {pct(cc, 0)} по матрице U.")
     steps.append({"module": "III", "title": "Кластеризация → ограничения диверсификации",
                   "facts": [f"K-medoids: {clusters.k} кластера, медоиды {', '.join(clusters.medoids)}",
-                            f"силуэт = {clusters.metrics.loc['K-medoids', 'silhouette']:.2f}",
+                            f"силуэт = {num(clusters.metrics.loc['K-medoids', 'silhouette'], 2)}",
                             "ограничение " + ("по матрице принадлежности U (FCM)" if U is not None else "по меткам K-medoids")],
-                  "result": f"≤ {cc:.0%} на кластер, ≤ {wm:.0%} на актив", "trail": []})
+                  "result": f"≤ {pct(cc, 0)} на кластер, ≤ {pct(wm, 0)} на актив", "trail": []})
 
     # ---- Module IV -> weights within the risky part
     s = signals.ranks.iloc[-1].reindex(cols).fillna(0.5).to_numpy()
@@ -136,10 +137,10 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
                      "вес между кластерами в пределах лимитов без учёта сигналов. Попробуйте другой метод "
                      "ковариации или профиль.")
     wr = pd.Series(w, index=cols).sort_values(ascending=False)
-    top = ", ".join(f"{a} {v:.0%}" for a, v in wr.head(3).items())
+    top = ", ".join(f"{a} {pct(v, 0)}" for a, v in wr.head(3).items())
     steps.append({"module": "IV", "title": "Ранговые сигналы → веса (max сигнал/риск)",
                   "facts": [f"модели: {', '.join(signals.models)}; сглаживание 10; s = Rank/N",
-                            f"IC ансамбля вне выборки = {signals.metrics.iloc[-1]['IC']:.3f} "
+                            f"IC ансамбля вне выборки = {num(signals.metrics.iloc[-1]['IC'], 3)} "
                             f"(протокол: {config.PROTOCOLS[settings.protocol]['label']})",
                             f"ковариация: {settings.cov_method}, окно {config.COV_WINDOW} дн."],
                   "result": f"крупнейшие позиции: {top}", "trail": []})

@@ -16,7 +16,7 @@ from werkzeug.exceptions import HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dss import config, pipeline, plots  # noqa: E402
+from dss import config, numfmt, pipeline, plots  # noqa: E402
 from dss.report import build_report  # noqa: E402
 from dss.signals import MODEL_LABELS, tensorflow_available  # noqa: E402
 
@@ -69,15 +69,9 @@ def settings_from_request() -> tuple[config.Settings, dict]:
 
 # ------------------------------------------------------------------ helpers
 def fmt(v, kind="num", d=2):
-    if v is None or (isinstance(v, float) and not np.isfinite(v)):
-        return "—"
-    if kind == "pct":
-        return f"{v * 100:.{d}f}%".replace(".", ",")
-    if isinstance(v, (int, np.integer)):
-        return f"{v:,}".replace(",", " ")
-    if isinstance(v, (float, np.floating)):
-        s = f"{v:,.{d}f}".replace(",", " ").replace(".", ",")
-        return s
+    """Russian number format (dss.numfmt); non-numeric values are shown as they are."""
+    if v is None or isinstance(v, (int, float, np.integer, np.floating)):
+        return numfmt.pct(v, d) if kind == "pct" else numfmt.num(v, d)
     return str(v)
 
 
