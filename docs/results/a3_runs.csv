@@ -1,0 +1,4 @@
+variant,start,end,days,n_assets,k,features,tc_bps,risk_free
+все 9 бумаг,2022-12-08,2026-10-09,949,9,2,"ann_return,ann_vol,sharpe,max_dd,beta,mom_6m",10,0.05
+без KZTK,2022-12-08,2026-10-09,949,8,2,"ann_return,ann_vol,sharpe,max_dd,beta,mom_6m",10,0.05
+без KMGZ,2021-07-15,2026-10-09,1297,8,2,"ann_return,ann_vol,sharpe,max_dd,beta,mom_6m",10,0.05
