@@ -64,6 +64,7 @@ python -m dss.cli report -o report.html                              # авто�
 python -m dss.cli significance       # 95% ДИ Шарпа стратегий и тест Диболда–Мариано (ФТ-IV-13)
 python -m dss.cli sensitivity        # чувствительность и монотонность правил интеграции
 python scripts/reproduce.py          # воспроизведение статей [A1]–[A4] → docs/reproduction.md (≈ 2 мин)
+python -m dss.cli export -o tables.xlsx   # все таблицы модулей в Excel (нужен openpyxl; иначе -o tables.zip — CSV)
 ```
 
 ## Тесты и проверка стиля
@@ -110,6 +111,7 @@ dss/
   integration.py   модуль интеграции (бюджет риска, хедж, лимиты, веса; анализ чувствительности правил)
   pipeline.py      оркестрация и кэш
   plots.py, report.py, cli.py
+  export.py        выгрузка всех таблиц в Excel (.xlsx) или ZIP с CSV
 webapp/            Flask-интерфейс (6 страниц)
 tests/             test_core — научные инварианты (нет утечки, ограничения, табл. 9–10);
                    test_loaders — проверка CSV; test_analysis — правила интеграции и тесты значимости;
@@ -126,7 +128,8 @@ scripts/make_screenshots.py  скриншоты интерфейса (KASE — d
 
 * `statsmodels` — точная ML-оценка ARIMA (без него — встроенная оценка методом условных наименьших квадратов);
 * `tensorflow` — модели RNN, LSTM, CNN-LSTM, LSTM-MLP (набор «11 моделей статьи»);
-* `yfinance` — загрузка цен NSE.
+* `yfinance` — загрузка цен NSE;
+* `openpyxl` — выгрузка таблиц в Excel (`export`, ссылка «Таблицы (Excel)»); без него таблицы выгружаются ZIP-архивом CSV.
 
 ## Публикации
 

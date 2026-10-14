@@ -33,6 +33,7 @@ MODEL_LABELS = {
     "rnn": "RNN", "lstm": "LSTM", "cnn_lstm": "CNN-LSTM", "lstm_mlp": "LSTM-MLP",
 }
 DL_MODELS = ("rnn", "lstm", "cnn_lstm", "lstm_mlp")
+DL_EPOCHS, DL_BATCH, DL_PATIENCE = 50, 256, 10   # Adam(1e-3), early stopping 10 ([A4])
 
 
 # --------------------------------------------------------------------------
@@ -126,6 +127,15 @@ def _sequences(panel: pd.DataFrame, cols, scaler, lookback):
     return np.asarray(Xs, dtype="float32"), np.asarray(ys, dtype="float32"), np.asarray(idx)
 
 
+def _test_windows(history: pd.DataFrame, test: pd.DataFrame, cols, scaler, lookback):
+    """Windows ending on each test row: the last ``lookback - 1`` feature rows of
+    ``history`` per asset (no gap before the block) followed by the test rows."""
+    both = pd.concat([history.groupby("asset").tail(lookback - 1), test]).sort_values(["asset", "Date"])
+    X, _, idx = _sequences(both, cols, scaler, lookback)
+    keep = np.isin(idx, test.index)
+    return X[keep], idx[keep]
+
+
 def _keras_model(key: str, lookback: int, n_feat: int):  # pragma: no cover - needs TF
     from tensorflow import keras
     L = keras.layers
@@ -164,18 +174,39 @@ class SignalResult:
     latest: pd.DataFrame         # latest raw, smoothed forecast and rank per asset
 
 
-def _fit_predict(key, train, test, cols, lookback):
+def _keras_seed():  # pragma: no cover - needs TF
+    """Seed 42 for Python, NumPy and TensorFlow, deterministic ops (NFR-01)."""
+    import tensorflow as tf
+    tf.keras.utils.set_random_seed(config.RANDOM_SEED)
+    try:
+        tf.config.experimental.enable_op_determinism()
+    except Exception:        # older TF or ops already initialised: seeds still apply
+        pass
+
+
+def _fit_predict(key, train, test, cols, lookback, history=None, state=None):
+    """Fit on ``train`` (rows whose target is known) and forecast ``test``.
+
+    ``history`` - feature rows before the test block (default: ``train``); the
+    sequence models need the last ``lookback - 1`` of them per asset.
+    ``state``   - dict shared across walk-forward blocks: a sequence model
+    trained on an earlier block is fine-tuned instead of trained from scratch.
+    """
     scaler = MinMaxScaler().fit(train[cols])
     if key in DL_MODELS:  # pragma: no cover - needs TF
         from tensorflow import keras
-        Xtr, ytr, _ = _sequences(train, cols, scaler, lookback)
-        both = pd.concat([train.groupby("asset").tail(lookback - 1), test]).sort_values(["asset", "Date"])
-        Xte, _, idx = _sequences(both, cols, scaler, lookback)
-        keep = np.isin(idx, test.index)
-        model = _keras_model(key, lookback, len(cols))
-        model.fit(Xtr, ytr, epochs=50, batch_size=256, validation_split=0.1, verbose=0,
-                  callbacks=[keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)])
-        return pd.Series(model.predict(Xte[keep], verbose=0).ravel(), index=idx[keep])
+        Xtr, ytr, itr = _sequences(train, cols, scaler, lookback)
+        order = np.argsort(itr, kind="stable")      # chronological: validation = latest 10 %
+        Xtr, ytr = Xtr[order], ytr[order]
+        Xte, idx = _test_windows(train if history is None else history, test, cols, scaler, lookback)
+        state = {} if state is None else state
+        if key not in state:
+            _keras_seed()
+            state[key] = _keras_model(key, lookback, len(cols))
+        model = state[key]
+        model.fit(Xtr, ytr, epochs=DL_EPOCHS, batch_size=DL_BATCH, validation_split=0.1, shuffle=True, verbose=0,
+                  callbacks=[keras.callbacks.EarlyStopping(patience=DL_PATIENCE, restore_best_weights=True)])
+        return pd.Series(model.predict(Xte, batch_size=1024, verbose=0).ravel(), index=idx)
     model = make_model(key)
     tr = train.dropna(subset=["target"])
     if key == "svr" and len(tr) > 5000:      # O(n^2): subsample
@@ -219,13 +250,15 @@ def run(prices: pd.DataFrame, models=("ridge", "rf", "gb"), train_share: float =
     test_dates = dates[start:]
     blocks = [test_dates[i:i + retrain_every] for i in range(0, len(test_dates), retrain_every)] if retrain_every else [test_dates]
     preds = {m: [] for m in models}
+    state: dict = {}                       # sequence models carried over between blocks
     for block in blocks:
         # train on rows whose target is already known at the block start
         train = panel[panel["Date"] < block[0]].dropna(subset=["target"])
         train = train[train["Date"] < block[0] - np.timedelta64(1, "D")]
         test = panel[panel["Date"].isin(block)]
+        history = panel[panel["Date"] < block[0]]      # features up to the eve of the block are known
         for m in models:
-            preds[m].append(_fit_predict(m, train, test, cols, lookback))
+            preds[m].append(_fit_predict(m, train, test, cols, lookback, history, state))
     realised = panel.pivot(index="Date", columns="asset", values="target")
     out, rows = {}, []
     for m in models:

@@ -54,6 +54,7 @@ def build_report(r) -> str:
 <main style="max-width:1180px;margin:0 auto">
 {demo}
 <h1>Отчёт СППР: рекомендация по инвестиционному портфелю</h1>
+<p class="note print-hide">PDF: откройте файл в браузере и выберите «Печать → Сохранить как PDF» — разметка страниц A4 уже настроена.</p>
 <p class="lede">Сформирован {dt.datetime.now():%d.%m.%Y %H:%M}. Профиль «{d.profile.label}», сценарий
 {html.escape(config.SCENARIOS[d.scenario]['label'])}, модели сигналов: {', '.join(st.models)}, ребалансировка {st.rebalance},
 издержки {num(st.tc_bps, 0)} б.п., безрисковая ставка {pct(st.risk_free, 0)}
