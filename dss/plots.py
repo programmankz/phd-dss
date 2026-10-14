@@ -17,8 +17,11 @@ import pandas as pd  # noqa: E402
 from .numfmt import num  # noqa: E402
 
 NAVY, TEXT, MUTED, GRID = "#14213D", "#1F2937", "#5B6576", "#D9DEE6"
-M1, M2, M3, M4, GOLD = "#1F5FAD", "#0F8B8D", "#7A4EA3", "#C2700E", "#E0A526"
-SERIES = [M1, M4, M2, M3, GOLD, "#8A93A3", "#B03A48", "#3E7C59"]
+# One accent (navy) + a grey ramp; modules are not colour-coded.
+G1, G2, G3, G4 = "#3B4A63", "#5B6576", "#8A93A3", "#B4BCC8"
+M1 = M2 = M3 = M4 = NAVY
+GOLD = G4
+SERIES = [NAVY, G2, G3, G4, G1, "#1F2937"]
 
 from matplotlib import font_manager as _fm  # noqa: E402
 
@@ -51,12 +54,12 @@ def kz_forecast(macro, scenario: str = "base", country: str = "Казахста�
     x = fc.index
     ax.fill_between(x, fc["ARIMA_lo"], fc["ARIMA_hi"], color=M1, alpha=0.10, lw=0, label="ARIMA 95% ДИ")
     ax.plot(x, fc["ARIMA"], color=M1, lw=2.2, marker="o", ms=4, label=f"ARIMA{macro.extra['arima_order']}")
-    ax.plot(x, fc["LSTM-style"], color=M4, lw=1.4, ls="--", label="LSTM-style")
+    ax.plot(x, fc["LSTM-style"], color=G2, lw=1.4, ls="--", label="LSTM-style")
     ax.plot(x, fc["Prophet-style"], color=MUTED, lw=1.2, ls=":", label="Prophet-style")
     if "IMF WEO" in fc:
-        ax.plot(x, fc["IMF WEO"], color=GOLD, lw=1.4, marker="s", ms=3, label="IMF WEO (окт. 2024)")
+        ax.plot(x, fc["IMF WEO"], color=G3, lw=1.4, marker="s", ms=3, label="IMF WEO (окт. 2024)")
     if scenario != "base":
-        ax.plot(x, macro.scenario_path(scenario), color="#B03A48", lw=2, label=SCENARIOS[scenario]["label"])
+        ax.plot(x, macro.scenario_path(scenario), color=G1, lw=2, ls="-.", label=SCENARIOS[scenario]["label"])
     ax.axhline(0, color=MUTED, lw=0.8)
     ax.set_title(f"{country}: рост ВВП, % — факт и прогноз")
     ax.legend(ncol=3, fontsize=8, loc="lower right")
@@ -76,7 +79,7 @@ def importance(series: pd.Series) -> str:
 
 def country_clusters(static: pd.DataFrame, highlight=("Kazakhstan",)) -> str:
     fig, ax = plt.subplots(figsize=(5.4, 3.8))
-    cols = {"Стабильный рост": M1, "Высокий рост": M2, "Низкий рост / стагнация": GOLD, "Кризисный": "#B03A48"}
+    cols = {"Стабильный рост": NAVY, "Высокий рост": G2, "Низкий рост / стагнация": G4, "Кризисный": G3}
     for name, sub in static.groupby("cluster"):
         ax.scatter(sub.pc1, sub.pc2, s=16, color=cols.get(name, MUTED), alpha=0.75, label=name)
     for h in highlight:
@@ -92,7 +95,7 @@ def country_clusters(static: pd.DataFrame, highlight=("Kazakhstan",)) -> str:
 
 def dtw_profiles(profiles: pd.DataFrame) -> str:
     fig, ax = plt.subplots(figsize=(5.4, 3.8))
-    cols = {"Стабильный рост": M1, "Высокий рост": M2, "Низкий рост / стагнация": GOLD, "Кризисный": "#B03A48"}
+    cols = {"Стабильный рост": NAVY, "Высокий рост": G2, "Низкий рост / стагнация": G4, "Кризисный": G3}
     for c in profiles:
         ax.plot(profiles.index, profiles[c], lw=1.8, color=cols.get(c, MUTED), label=c)
     ax.set_title("DTW-кластеры: медоидные траектории (z-оценки)")
@@ -103,17 +106,17 @@ def dtw_profiles(profiles: pd.DataFrame) -> str:
 # ---------------------------------------------------------------- Module II
 def fx_rates(rates: pd.DataFrame, shocks: pd.DataFrame | None = None) -> str:
     fig, ax = plt.subplots(figsize=(8, 3.4))
-    for c, col in zip(["USD", "EUR", "CNY"], [M1, M4, M2]):
+    for c, col in zip(["USD", "EUR", "CNY"], [NAVY, G2, G3]):
         if c in rates:
             ax.plot(rates.index, rates[c], lw=1.2, color=col, label=f"{c}/KZT")
     ax2 = ax.twinx()
     if "RUB" in rates:
-        ax2.plot(rates.index, rates["RUB"], lw=1.0, color=M3, alpha=0.8, label="RUB/KZT (пр. ось)")
+        ax2.plot(rates.index, rates["RUB"], lw=1.0, color=G4, alpha=0.9, label="RUB/KZT (пр. ось)")
     ax2.spines["right"].set_visible(True)
     ax2.grid(False)
     if shocks is not None and len(shocks):
         for d in shocks["date"]:
-            ax.axvline(pd.Timestamp(d), color="#B03A48", lw=0.8, ls="--", alpha=0.7)
+            ax.axvline(pd.Timestamp(d), color=G2, lw=0.8, ls="--", alpha=0.7)
     ax.set_title("Официальные курсы НБ РК, тенге за единицу (пунктир — выявленные шоки)")
     h1, l1 = ax.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
@@ -121,7 +124,7 @@ def fx_rates(rates: pd.DataFrame, shocks: pd.DataFrame | None = None) -> str:
     return to_b64(fig)
 
 
-def heatmap(corr: pd.DataFrame, title: str, cmap="Blues") -> str:
+def heatmap(corr: pd.DataFrame, title: str, cmap="Greys") -> str:
     fig, ax = plt.subplots(figsize=(4.4, 3.6))
     im = ax.imshow(corr.values, cmap=cmap, vmin=min(0, corr.values.min()), vmax=1)
     ax.set_xticks(range(len(corr)), corr.columns, rotation=0 if len(corr) <= 8 else 90)
@@ -139,7 +142,7 @@ def heatmap(corr: pd.DataFrame, title: str, cmap="Blues") -> str:
 
 def r2_bars(reg: pd.DataFrame) -> str:
     fig, ax = plt.subplots(figsize=(4.4, 3.2))
-    cols = [M2 if v >= 0.5 else "#B03A48" for v in reg["R2"]]
+    cols = [NAVY if v >= 0.5 else G4 for v in reg["R2"]]
     ax.bar(reg.index, reg["R2"], color=cols, width=0.6)
     for i, v in enumerate(reg["R2"]):
         ax.text(i, v + 0.02, f"{num(v, 2)}", ha="center", fontsize=9, color=TEXT)
@@ -152,9 +155,9 @@ def r2_bars(reg: pd.DataFrame) -> str:
 def fx_risk(comp: pd.DataFrame, total: float) -> str:
     fig, ax = plt.subplots(figsize=(4.4, 3.0))
     s = comp["risk"].sort_values()
-    cols = ["#B03A48" if v >= 0.66 else GOLD if v >= 0.4 else M2 for v in s.values]
+    cols = [NAVY if v >= 0.66 else G2 if v >= 0.4 else G4 for v in s.values]
     ax.barh([f"{c}/KZT" for c in s.index], s.values, color=cols)
-    ax.axvline(total, color=NAVY, lw=2, label=f"Индекс = {num(total, 2)}")
+    ax.axvline(total, color="#1F2937", lw=1.5, ls="--", label=f"Индекс = {num(total, 2)}")
     ax.set_xlim(0, 1)
     ax.set_title("Компоненты индекса валютного риска")
     ax.legend(fontsize=8, loc="lower right")
@@ -182,7 +185,7 @@ def asset_clusters(cl) -> str:
 
 def memberships(U: pd.DataFrame) -> str:
     fig, ax = plt.subplots(figsize=(4.0, 0.32 * len(U) + 1.0))
-    ax.imshow(U.values, cmap="Purples", vmin=0, vmax=1, aspect="auto")
+    ax.imshow(U.values, cmap="Greys", vmin=0, vmax=1, aspect="auto")
     ax.set_yticks(range(len(U)), U.index)
     ax.set_xticks(range(U.shape[1]), U.columns)
     for i in range(U.shape[0]):
@@ -196,9 +199,9 @@ def memberships(U: pd.DataFrame) -> str:
 
 def k_selection(sel: dict) -> str:
     fig, ax = plt.subplots(figsize=(4.4, 3.0))
-    ax.plot(sel["k"], sel["inertia"], marker="o", color=M3, label="Стоимость (локоть)")
+    ax.plot(sel["k"], sel["inertia"], marker="o", color=NAVY, label="Стоимость (локоть)")
     ax2 = ax.twinx()
-    ax2.plot(sel["k"], sel["silhouette"], marker="s", ls="--", color=M4, label="Силуэт")
+    ax2.plot(sel["k"], sel["silhouette"], marker="s", ls="--", color=G3, label="Силуэт")
     ax2.spines["right"].set_visible(True)
     ax2.grid(False)
     ax.axvline(sel["best_k"], color=MUTED, ls=":")
@@ -234,7 +237,7 @@ def model_ic(metrics: pd.DataFrame) -> str:
 
 def equity_curves(curves: pd.DataFrame) -> str:
     fig, ax = plt.subplots(figsize=(8, 3.6))
-    cols = {"Signal Weighted": M4, "Max Signal-to-Risk": M1, "Min Variance": M2, "Equal Weighted": GOLD}
+    cols = {"Signal Weighted": G2, "Max Signal-to-Risk": NAVY, "Min Variance": G3, "Equal Weighted": G4}
     for c in curves:
         ax.plot(curves.index, curves[c], lw=2 if c in ("Signal Weighted", "Max Signal-to-Risk") else 1.2,
                 color=cols.get(c, MUTED), ls="-" if c in cols else "--", label=c)
@@ -247,7 +250,7 @@ def equity_curves(curves: pd.DataFrame) -> str:
 def allocation(alloc: pd.DataFrame) -> str:
     a = alloc[alloc["weight"] > 0.001].sort_values("weight")
     fig, ax = plt.subplots(figsize=(5.6, 0.3 * len(a) + 1.0))
-    cols = [M2 if g != "Рисковая часть" else M4 for g in a["group"]]
+    cols = [G4 if g != "Рисковая часть" else NAVY for g in a["group"]]
     labels = [i.replace("Безрисковая часть: ", "") for i in a.index]
     ax.barh(labels, a["weight"] * 100, color=cols)
     for i, v in enumerate(a["weight"] * 100):
