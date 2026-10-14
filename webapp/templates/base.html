@@ -21,6 +21,7 @@
       <li class="sep" role="presentation"></li>
       <li><a href="/data?{{ qs }}" class="{{ 'on' if page=='data' }}"><span class="rn mx">≡</span>Данные</a></li>
       <li><a href="/report?{{ qs }}"><span class="rn mx">↓</span>Скачать отчёт</a></li>
+      <li><a href="/export?{{ qs }}"><span class="rn mx">↓</span>Таблицы (Excel)</a></li>
     </ul>
     <p class="side-foot">Версия 1.0 · модели по статьям [A1]–[A4]</p>
   </nav>
@@ -40,7 +41,7 @@
         <select name="models">
           <option value="fast" {{ 'selected' if raw.models=='fast' }}>Ridge + RF + GB</option>
           <option value="sklearn" {{ 'selected' if raw.models=='sklearn' }}>8 моделей scikit-learn</option>
-          <option value="full" {{ 'selected' if raw.models=='full' }}>11 моделей статьи + MLP{{ '' if tf else ' (нужен TensorFlow)' }}</option>
+          <option value="full" {{ 'selected' if raw.models=='full' }}>11 моделей статьи + MLP{{ ' (первый расчёт 15–20 мин, затем из кэша)' if tf else ' (нужен TensorFlow)' }}</option>
         </select></label>
       <label>Ребалансировка
         <select name="rebalance">{% for k, v in REBALANCE.items() %}<option value="{{ k }}" {{ 'selected' if raw.rebalance==k }}>{{ v }}</option>{% endfor %}</select></label>
@@ -58,5 +59,6 @@
     {% block content %}{% endblock %}
   </main>
 </div>
+<script>addEventListener('beforeprint', () => document.querySelectorAll('details').forEach(d => { d.open = true; }));</script>
 </body>
 </html>
