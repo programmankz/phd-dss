@@ -75,13 +75,16 @@ PROTOCOLS = {
 }
 # One-click reproduction of the [A4] experiment (scenario 6 of the spec)
 PAPER_PRESET = {"protocol": "paper", "cov": "sample", "rebalance": "D", "tc": "0", "caps": "0"}
+# Policy for profile limits that are jointly infeasible on the current universe/clusters (Sec. 10 of the spec)
+LIMITS_POLICIES = {"relax": "ослабить лимиты до ближайших достижимых (w_max +0,01, c +0,02 за шаг)",
+                   "strict": "строгая: без распределения рисковой части, пока лимиты несовместимы"}
 RISK_FREE = 0.05         # reproduces the Sharpe ratios of [A4] Table IV
 
 # Risk-free rate per universe (FR-IV-12). NSE: 5 %, inferred from [A4] Table IV.
-# KASE: the NBK base rate is to be used, but no value with a source is in the repository yet,
-# so the entry is a PLACEHOLDER (None) that falls back to RISK_FREE and is flagged in the UI.
-# Replace None with the rate as a fraction (e.g. 0.15 for 15 %) once the author provides it.
+# KASE: the average NBK base rate over the KASE price history (data/nbk_base_rate.csv, from 2019);
+# without that file the entry falls back to RISK_FREE and is flagged in the UI.
 RISK_FREE_BY_UNIVERSE = {"nse": RISK_FREE, "kase": None}
+KASE_RATE_START = "2019-01-01"
 
 
 def risk_free_for(universe: str) -> tuple[float, str]:
@@ -90,9 +93,17 @@ def risk_free_for(universe: str) -> tuple[float, str]:
     if rate is not None:
         return float(rate), ("5 % — восстановлена по табл. IV [A4]" if universe == "nse" and rate == RISK_FREE
                              else f"задана в config.RISK_FREE_BY_UNIVERSE[{universe!r}]")
+    if universe == "kase":
+        from .data.loaders import mean_base_rate
+        try:
+            mean = mean_base_rate(KASE_RATE_START)
+        except Exception:                       # malformed rates file: reported by the loader elsewhere
+            mean = None
+        if mean is not None:
+            return round(mean, 4), f"средняя базовая ставка НБ РК с {KASE_RATE_START[:4]} г. (data/nbk_base_rate.csv)"
     if universe in RISK_FREE_BY_UNIVERSE:
         return RISK_FREE, ("заглушка: ставка НБ РК для этого набора ещё не задана "
-                           "(config.RISK_FREE_BY_UNIVERSE), временно используется 5 %")
+                           "(data/nbk_base_rate.csv), временно используется 5 %")
     return RISK_FREE, "5 % по умолчанию (config.RISK_FREE)"
 
 
@@ -161,6 +172,7 @@ class Settings:
     risk_free: float | None = None       # None: by universe, see risk_free_for()
     protocol: str = "walk_forward"       # Module IV evaluation: "walk_forward" | "paper" (80/20)
     backtest_caps: bool = True           # False: only 0 <= w_i <= 1 in the backtest, as in [A4]
+    limits_policy: str = "relax"         # infeasible profile limits: "relax" (portfolio.feasible_limits) | "strict" (refuse)
     extra: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -175,4 +187,5 @@ class Settings:
     def key(self) -> tuple:
         return (self.profile, self.scenario, self.universe, tuple(self.models),
                 self.rebalance, float(self.tc_bps), self.cov_method,
-                bool(self.use_fuzzy_caps), float(self.risk_free), self.protocol, bool(self.backtest_caps))
+                bool(self.use_fuzzy_caps), float(self.risk_free), self.protocol, bool(self.backtest_caps),
+                self.limits_policy)

@@ -50,6 +50,9 @@ class Decision:
     cluster_exposure: pd.Series
     steps: list = field(default_factory=list)   # explanation trail, one per module
     warnings: list = field(default_factory=list)
+    refused: bool = False              # strict policy: limits infeasible, risky part not allocated
+    limits_nominal: tuple = ()         # (w_max, c) of the profile
+    limits_effective: tuple = ()       # (w_max, c) actually used (after relaxation)
 
 
 def _num(x: float) -> str:
@@ -111,9 +114,18 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
     labels = clusters.labels["K-medoids"].reindex(cols)
     U = clusters.U.reindex(cols).to_numpy() if settings.use_fuzzy_caps else None
     wm, cc = profile.max_asset_weight, profile.cluster_cap
+    refused = False
     if U is None:
         wm, cc, relaxed = feasible_limits(labels.to_numpy(), wm, cc)
-        if relaxed:
+        if relaxed and settings.limits_policy == "strict":
+            refused = True
+            counts = labels.value_counts()
+            small = ", ".join(f"К{int(k) + 1} ({n} бум.)" for k, n in counts.items() if n * profile.max_asset_weight < profile.cluster_cap)
+            warns.append(f"Строгая политика лимитов: лимиты профиля (≤ {pct(profile.cluster_cap, 0)} на кластер, "
+                         f"≤ {pct(profile.max_asset_weight, 0)} на актив) несовместимы с {clusters.k} кластерами "
+                         f"(Σ min(c, n_q·w_max) < 1; малые кластеры: {small or '—'}). Рисковая часть не распределена: "
+                         f"смените профиль, расширьте набор бумаг или выберите политику ослабления лимитов.")
+        elif relaxed:
             warns.append(f"Лимиты профиля несовместимы со структурой кластеров и ослаблены до "
                          f"≤ {pct(cc, 0)} на кластер и ≤ {pct(wm, 0)} на актив.")
     elif cc < 1.0 / U.shape[1]:
@@ -130,8 +142,11 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
     s = signals.ranks.iloc[-1].reindex(cols).fillna(0.5).to_numpy()
     rets = prices.pct_change().dropna().iloc[-config.COV_WINDOW:]
     cov = covariance(rets, settings.cov_method)
-    w, ok = max_signal_to_risk(s, cov, profile.max_asset_weight, labels.to_numpy(), U, profile.cluster_cap,
-                               return_ok=True)
+    if refused:
+        w, ok = np.zeros(len(cols)), True
+    else:
+        w, ok = max_signal_to_risk(s, cov, profile.max_asset_weight, labels.to_numpy(), U, profile.cluster_cap,
+                                   return_ok=True)
     if not ok:
         warns.append("Оптимизатор Модуля IV не сошёлся: показан допустимый портфель, который распределяет "
                      "вес между кластерами в пределах лимитов без учёта сигналов. Попробуйте другой метод "
@@ -143,7 +158,8 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
                             f"IC ансамбля вне выборки = {num(signals.metrics.iloc[-1]['IC'], 3)} "
                             f"(протокол: {config.PROTOCOLS[settings.protocol]['label']})",
                             f"ковариация: {settings.cov_method}, окно {config.COV_WINDOW} дн."],
-                  "result": f"крупнейшие позиции: {top}", "trail": []})
+                  "result": "рисковая часть не распределена (строгая политика лимитов)" if refused
+                  else f"крупнейшие позиции: {top}", "trail": []})
     ic = signals.metrics.iloc[-1]["IC"]
     if not np.isfinite(ic) or ic <= 0:
         warns.append("Сигналы Модуля IV не показали положительной предсказательной силы вне выборки (IC ≤ 0): "
@@ -167,7 +183,8 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
     if g_next < rules.low_growth_warn:
         warns.append(f"Прогноз роста ниже {_num(rules.low_growth_warn)}%: высокий риск рецессии, "
                      "пересмотрите горизонт инвестирования.")
-    return Decision(profile, sc, risky, usd, alloc, wr, exp_vol, float(var95), exp_cl * risky, steps, warns)
+    return Decision(profile, sc, risky, usd, alloc, wr, exp_vol, float(var95), exp_cl * risky, steps, warns,
+                    refused, (profile.max_asset_weight, profile.cluster_cap), (wm, cc))
 
 
 # --------------------------------------------------------------------------

@@ -208,3 +208,25 @@ def test_export_tables_xlsx_and_zip():
         assert resp.mimetype == export.XLSX
     else:
         assert resp.mimetype == "application/zip"
+
+
+def test_strict_limits_policy_refuses_infeasible_profile():
+    """Sec. 10 of the spec: under the strict policy an infeasible profile gets no
+    risky allocation and a warning naming the limits, while the default policy
+    relaxes the limits and reports the effective values."""
+    with isolated():
+        relax = pipeline.run(config.Settings(profile="conservative"))
+        strict = pipeline.run(config.Settings(profile="conservative", limits_policy="strict"))
+        page = _client().get("/?profile=conservative&limits=strict").get_data(as_text=True)
+    d = strict.decision
+    wm, cc = relax.decision.limits_effective
+    assert relax.decision.limits_nominal == (0.15, 0.40)
+    if relax.decision.limits_effective == relax.decision.limits_nominal:   # feasible on this demo draw: nothing to refuse
+        assert not d.refused and np.isclose(d.risky_weights.sum(), 1.0)
+        return
+    assert wm >= 0.15 and cc >= 0.40
+    assert d.refused and np.isclose(d.risky_weights.sum(), 0.0)
+    assert np.isclose(d.allocation["weight"].sum(), 1 - d.risky_share)
+    assert any("Строгая политика лимитов" in w for w in d.warnings)
+    assert d.exp_vol == 0.0 and d.steps[3]["result"].startswith("рисковая часть не распределена")
+    assert "Строгая политика лимитов" in page and 'value="strict" selected' in page

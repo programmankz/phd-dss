@@ -1,6 +1,6 @@
 """Command-line interface.
 
-    python -m dss.cli fetch gdp|fx|nse|kase  download real data into ./data
+    python -m dss.cli fetch gdp|fx|nse|kase|rates  download real data into ./data
     python -m dss.cli warmup               compute and cache all modules
     python -m dss.cli decide [options]     print the recommendation
     python -m dss.cli report -o out.html   write the HTML report
@@ -25,14 +25,14 @@ def _settings(a) -> config.Settings:
     return config.Settings(profile=a.profile, scenario=a.scenario, universe=a.universe,
                            models=tuple(a.models.split(",")), rebalance=a.rebalance,
                            tc_bps=a.tc, cov_method=a.cov, use_fuzzy_caps=a.fuzzy,
-                           protocol=a.protocol, backtest_caps=a.caps)
+                           protocol=a.protocol, backtest_caps=a.caps, limits_policy=a.limits)
 
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="dss", description="СППР управления инвестиционным портфелем")
     sub = p.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch", help="загрузить реальные данные")
-    f.add_argument("what", choices=["gdp", "fx", "nse", "kase"])
+    f.add_argument("what", choices=["gdp", "fx", "nse", "kase", "rates"])
     f.add_argument("--start", default=None)
     f.add_argument("--tickers", default=None, help="kase/nse: тикеры через запятую вместо набора по умолчанию")
     for name in ("warmup", "decide", "report", "sensitivity", "significance", "export"):
@@ -45,6 +45,8 @@ def main(argv=None) -> int:
         s.add_argument("--tc", type=float, default=10.0)
         s.add_argument("--cov", default="ledoit_wolf", choices=["ledoit_wolf", "sample"])
         s.add_argument("--fuzzy", action="store_true")
+        s.add_argument("--limits", default="relax", choices=list(config.LIMITS_POLICIES),
+                       help="несовместимые лимиты профиля: relax — ослабить, strict — отказ от рисковой части")
         s.add_argument("--protocol", default="walk_forward", choices=list(config.PROTOCOLS),
                        help="walk_forward или paper (одно разбиение 80/20, как в [A4])")
         s.add_argument("--no-caps", dest="caps", action="store_false",
@@ -67,6 +69,11 @@ def main(argv=None) -> int:
         elif a.what == "fx":
             df = loaders.fetch_nbk(start=a.start or "2000-01-01")
             print(f"fx_rates.csv: {len(df)} дней, {df.index.min():%Y-%m-%d} – {df.index.max():%Y-%m-%d}")
+        elif a.what == "rates":
+            nbk = loaders.fetch_nbk_base_rate()
+            tb = loaders.fetch_tb3ms()
+            print(f"nbk_base_rate.csv: {len(nbk)} изменений ставки, последнее {nbk['effective_from'].max():%Y-%m-%d}; "
+                  f"tb3ms.csv: {len(tb)} месяцев, последний {tb['Date'].max()}")
         elif a.what == "kase":
             tickers = a.tickers.split(",") if a.tickers else loaders.KASE_TICKERS
             df = loaders.fetch_kase(tickers, start=a.start or "2019-01-01")

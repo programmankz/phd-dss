@@ -43,6 +43,7 @@ def settings_from_request() -> tuple[config.Settings, dict]:
         "fuzzy": a.get("fuzzy", "0"),
         "protocol": a.get("protocol", "walk_forward"),
         "caps": a.get("caps", "1"),
+        "limits": a.get("limits", "relax"),
     }
     if raw["profile"] not in config.PROFILES:
         raw["profile"] = "moderate"
@@ -55,6 +56,8 @@ def settings_from_request() -> tuple[config.Settings, dict]:
     if raw["protocol"] not in config.PROTOCOLS:
         raw["protocol"] = "walk_forward"
     raw["caps"] = "0" if raw["caps"] == "0" else "1"
+    if raw["limits"] not in config.LIMITS_POLICIES:
+        raw["limits"] = "relax"
     try:
         tc = float(raw["tc"])
     except ValueError:
@@ -63,7 +66,7 @@ def settings_from_request() -> tuple[config.Settings, dict]:
                          models=MODEL_SETS[raw["models"]], rebalance=raw["rebalance"], tc_bps=tc,
                          cov_method=raw["cov"] if raw["cov"] in ("sample", "ledoit_wolf") else "ledoit_wolf",
                          use_fuzzy_caps=raw["fuzzy"] == "1", protocol=raw["protocol"],
-                         backtest_caps=raw["caps"] == "1")
+                         backtest_caps=raw["caps"] == "1", limits_policy=raw["limits"])
     return st, raw
 
 
