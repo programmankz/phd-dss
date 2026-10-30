@@ -13,6 +13,8 @@ sources used in the articles and writes them to the data directory:
 * FX rates    - National Bank of the Republic of Kazakhstan, daily official rates [A2]
 * NSE prices  - Yahoo Finance via ``yfinance`` (optional dependency)             [A4]
 * KASE prices - kase.kz chart feed (TradingView UDF, /tv-charts/securities)      [A3]
+* NBK base rate - nationalbank.kz decision schedule pages (one table per year)
+* US 3-month T-bill rate - FRED series TB3MS (CSV download)
 
 Expected CSV layouts
 --------------------
@@ -20,7 +22,10 @@ gdp_growth.csv    : country,1980,1981,...,2024           (wide, % change)
 fx_rates.csv      : Date,USD,EUR,CNY,RUB                 (KZT per unit)
 prices_<u>.csv    : Date,<TICKER1>,<TICKER2>,...         (close prices)
 fundamentals_<u>.csv : ticker,sector,PB,PE
-corporate_actions.csv : ticker,ex_date,method,factor,note  (optional, applied to every price file)
+corporate_actions.csv : ticker,ex_date,method,factor,note  (optional, applied to every price file;
+                        method ratio | factor | dividend, see validate_corporate_actions)
+nbk_base_rate.csv : effective_from,rate   (NBK base rate, % p.a., by effective date)
+tb3ms.csv         : Date,rate             (3-month US T-bill rate, % p.a., monthly, FRED TB3MS)
 
 A malformed user CSV raises :class:`DataError` with a message that names the
 file, the cause and the action; :func:`dss.pipeline.run` turns it into a
@@ -58,7 +63,7 @@ KASE_TICKERS = list(KASE_SECTORS)
 # was spun off from Tata Motors on 2025-10-14; the raw close drops ~40% that day. Built-in
 # default applied by `fetch nse`; further events go to data/corporate_actions.csv.
 NSE_DEMERGERS = {"TMPV.NS": "2025-10-14"}
-ACTION_METHODS = ("ratio", "factor")
+ACTION_METHODS = ("ratio", "factor", "dividend")
 NSE_SECTORS = dict(zip(NSE_TICKERS, ["Финансы"] * 4 + ["IT"] * 4 + ["Энергетика"] * 4 +
                        ["Потребительский"] * 4 + ["Авто"] * 4))
 
@@ -215,7 +220,9 @@ def load_fx(source: str = "auto") -> Dataset:
 
 def validate_corporate_actions(df: pd.DataFrame, name: str = "corporate_actions.csv") -> pd.DataFrame:
     """ticker,ex_date,method,factor,note -> typed frame; ``method`` is "ratio" (back-adjust by the
-    observed close ratio around the ex-date) or "factor" (multiply earlier prices by ``factor``)."""
+    observed close ratio around the ex-date), "factor" (multiply earlier prices by ``factor``) or
+    "dividend" (``factor`` is the cash amount per share: earlier prices are multiplied by
+    1 - amount / last close before the ex-date, the usual total-return adjustment)."""
     missing = [c for c in ("ticker", "ex_date", "method") if c not in df.columns]
     if missing:
         raise DataError(f"Файл {name}: нет столбцов {', '.join(missing)} — проверьте заголовок "
@@ -231,13 +238,13 @@ def validate_corporate_actions(df: pd.DataFrame, name: str = "corporate_actions.
     bad = df.loc[~df["method"].isin(ACTION_METHODS), "method"]
     if len(bad):
         raise DataError(f"Файл {name}: метод «{bad.iloc[0]}» не поддерживается — укажите ratio (по отношению цен "
-                        "до и после события) или factor (явный множитель)")
+                        "до и после события), factor (явный множитель) или dividend (выплата на акцию)")
     factor = pd.to_numeric(df["factor"], errors="coerce") if "factor" in df else pd.Series(float("nan"), df.index)
-    need = (df["method"] == "factor") & ~(factor > 0)
+    need = df["method"].isin(("factor", "dividend")) & ~(factor > 0)
     if need.any():
         t = df.loc[need].iloc[0]
-        raise DataError(f"Файл {name}: для {t.ticker} ({t.ex_date:%Y-%m-%d}) метод factor требует положительного "
-                        "множителя в столбце factor (точка как разделитель дробной части)")
+        raise DataError(f"Файл {name}: для {t.ticker} ({t.ex_date:%Y-%m-%d}) метод {t.method} требует положительного "
+                        "числа в столбце factor (множитель или выплата на акцию; точка как разделитель дробной части)")
     df["factor"] = factor
     dup = df.duplicated(["ticker", "ex_date"])
     if dup.any():
@@ -255,10 +262,55 @@ def load_corporate_actions() -> pd.DataFrame | None:
     return validate_corporate_actions(_read_csv(path), path.name)
 
 
+def validate_rates(nbk: pd.DataFrame, tb: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """Typed step series of the two reference rates (fractions, indexed by date)."""
+    for df, cols, name in ((nbk, ("effective_from", "rate"), "nbk_base_rate.csv"), (tb, ("Date", "rate"), "tb3ms.csv")):
+        missing = [c for c in cols if c not in df.columns]
+        if missing:
+            raise DataError(f"Файл {name}: нет столбцов {', '.join(missing)} — проверьте заголовок "
+                            f"(ожидается: {','.join(cols)})")
+    out = []
+    for df, col, name in ((nbk, "effective_from", "nbk_base_rate.csv"), (tb, "Date", "tb3ms.csv")):
+        dates = pd.to_datetime(df[col].astype(str).str.strip(), format="%Y-%m-%d", errors="coerce")
+        rate = pd.to_numeric(df["rate"], errors="coerce")
+        if dates.isna().any() or rate.isna().any() or (rate < 0).any() or (rate > 100).any():
+            raise DataError(f"Файл {name}: даты должны быть в формате ГГГГ-ММ-ДД, ставка — числом в процентах "
+                            "годовых от 0 до 100")
+        s = pd.Series(rate.to_numpy() / 100.0, index=dates).sort_index()
+        if s.index.duplicated().any():
+            raise DataError(f"Файл {name}: дата {s.index[s.index.duplicated()][0]:%Y-%m-%d} указана несколько раз")
+        out.append(s)
+    return out[0], out[1]
+
+
+def load_rates() -> tuple[pd.DataFrame, str] | tuple[None, str]:
+    """Daily (calendar) frame ``kzt``, ``usd`` of the reference rates as fractions, forward-filled
+    from the decision / observation dates; (None, reason) when one of the files is missing."""
+    nbk_path, tb_path = data_dir() / "nbk_base_rate.csv", data_dir() / "tb3ms.csv"
+    if not nbk_path.exists() or not tb_path.exists():
+        return None, "нет файлов nbk_base_rate.csv и tb3ms.csv (python -m dss.cli fetch rates)"
+    nbk, tb = validate_rates(_read_csv(nbk_path), _read_csv(tb_path))
+    days = pd.date_range(min(nbk.index.min(), tb.index.min()), max(nbk.index.max(), tb.index.max()) + pd.offsets.MonthEnd(0) + pd.Timedelta(days=400), freq="D")
+    df = pd.DataFrame({"kzt": nbk.reindex(days).ffill(), "usd": tb.reindex(days).ffill()})
+    df.index.name = "Date"
+    return df, (f"CSV: nbk_base_rate.csv ({len(nbk)} решений до {nbk.index.max():%Y-%m-%d}), "
+                f"tb3ms.csv (до {tb.index.max():%Y-%m})")
+
+
+def mean_base_rate(start: str = "2019-01-01", end: str | None = None) -> float | None:
+    """Average NBK base rate over [start, end] from data/nbk_base_rate.csv, or None without the file."""
+    df, _ = load_rates()
+    if df is None:
+        return None
+    s = df["kzt"].loc[start:end or df.index.max()]
+    return float(s.mean()) if len(s) else None
+
+
 def apply_corporate_actions(px: pd.DataFrame, actions: pd.DataFrame | None) -> tuple[pd.DataFrame, int]:
     """Back-adjust prices before each ex-date; returns (frame, number of events applied).
     Events for tickers not in ``px`` or with ex-dates outside its range are skipped. The ratio
-    method is idempotent: on already adjusted prices the ratio is 1."""
+    method is idempotent: on already adjusted prices the ratio is 1. The dividend method keeps
+    the market move of the ex-date: only the cash amount is removed from the price gap."""
     px, n = px.copy(), 0
     if actions is None:
         return px, n
@@ -269,7 +321,15 @@ def apply_corporate_actions(px: pd.DataFrame, actions: pd.DataFrame | None) -> t
         before, after = s[s.index < a.ex_date].dropna(), s[s.index >= a.ex_date].dropna()
         if before.empty or after.empty:
             continue
-        k = after.iloc[0] / before.iloc[-1] if a.method == "ratio" else a.factor
+        if a.method == "ratio":
+            k = after.iloc[0] / before.iloc[-1]
+        elif a.method == "dividend":
+            if a.factor >= before.iloc[-1]:
+                raise DataError(f"Файл corporate_actions.csv: выплата {a.factor:g} по {a.ticker} не меньше цены "
+                                f"{before.iloc[-1]:g} перед {a.ex_date:%Y-%m-%d} — проверьте сумму и дату")
+            k = 1 - a.factor / before.iloc[-1]
+        else:
+            k = a.factor
         px.loc[px.index < a.ex_date, a.ticker] = s[s.index < a.ex_date] * k
         n += 1
     return px, n
@@ -419,6 +479,52 @@ def fetch_nbk(start: str = "2000-01-01", end: str | None = None,
     cache.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(cache)
     return df
+
+
+NBK_BASE_RATE_URL = "https://nationalbank.kz/en/news/grafik-prinyatiya-resheniy-po-bazovoy-stavke/rubrics/1544"
+TB3MS_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=TB3MS"
+
+
+def parse_nbk_base_rate(html: str) -> pd.DataFrame:
+    """Rows ``effective_from,rate`` from one yearly page of the NBK decision schedule: the table
+    lists "DD.MM.YYYY" and the rate in %, one decision per row; rows without a rate are skipped."""
+    import re
+    text = re.sub(r"<[^>]+>", " ", html)
+    rows = re.findall(r"(\d{2}\.\d{2}\.\d{4})\*?\s+(\d{1,2}[.,]\d{1,2})", text)
+    df = pd.DataFrame(rows, columns=["effective_from", "rate"])
+    df["effective_from"] = pd.to_datetime(df["effective_from"], format="%d.%m.%Y")
+    df["rate"] = df["rate"].str.replace(",", ".").astype(float)
+    return df
+
+
+def fetch_nbk_base_rate(cache: Path | None = None) -> pd.DataFrame:
+    """Download the NBK base rate schedule (all yearly pages linked from the navigation) and
+    keep only the dates on which the rate changed. Writes data/nbk_base_rate.csv."""
+    import re
+    first = _get(NBK_BASE_RATE_URL).decode("utf8", "replace")
+    links = sorted(set(re.findall(r"/en/news/grafik-prinyatiya-resheniy-po-bazovoy-stavke/rubrics/(\d+)", first)))
+    frames = [parse_nbk_base_rate(first)]
+    for rid in links:
+        url = NBK_BASE_RATE_URL.rsplit("/", 1)[0] + "/" + rid
+        if url != NBK_BASE_RATE_URL:
+            frames.append(parse_nbk_base_rate(_get(url).decode("utf8", "replace")))
+    df = pd.concat(frames).drop_duplicates("effective_from").sort_values("effective_from")
+    df = df[df["rate"].ne(df["rate"].shift())]           # keep changes only
+    cache = cache or data_dir() / "nbk_base_rate.csv"
+    df.assign(effective_from=df["effective_from"].dt.strftime("%Y-%m-%d")).to_csv(cache, index=False)
+    return df
+
+
+def fetch_tb3ms(cache: Path | None = None, start: str = "2018-01-01") -> pd.DataFrame:
+    """Download the monthly 3-month T-bill rate (FRED TB3MS); writes data/tb3ms.csv."""
+    import io
+    raw = pd.read_csv(io.BytesIO(_get(TB3MS_URL)))
+    raw.columns = ["Date", "rate"]
+    raw = raw[pd.to_datetime(raw["Date"]) >= pd.Timestamp(start)]
+    raw = raw[pd.to_numeric(raw["rate"], errors="coerce").notna()]
+    cache = cache or data_dir() / "tb3ms.csv"
+    raw.to_csv(cache, index=False)
+    return raw
 
 
 def fetch_yahoo(tickers, start: str = "2020-01-01", end: str | None = None) -> pd.DataFrame:

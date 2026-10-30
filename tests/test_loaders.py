@@ -256,12 +256,31 @@ def test_corporate_actions_file_adjusts_any_universe():
     assert n == 1 and np.allclose(again["T1"], ds.frame["T1"])           # ratio method is idempotent
 
 
+def test_dividend_is_removed_from_the_price_gap_but_the_market_move_is_kept():
+    px = prices_csv(n_days=320, n_assets=6)
+    df = pd.read_csv(pd.io.common.StringIO(px), index_col=0)
+    ex = df.index[200]
+    last = df["T0"].iloc[199]
+    df.loc[ex:, "T0"] -= 0.4 * last                            # a cash dividend of 40 % of the price, unadjusted
+    actions = f"ticker,ex_date,method,factor,note\nT0,{ex},dividend,{0.4 * last},dividend\n"
+    with data_dir({"prices_kase.csv": df.to_csv(), "corporate_actions.csv": actions}):
+        ds = loaders.load_prices("kase")
+    raw = pd.read_csv(pd.io.common.StringIO(px), index_col=0)
+    r_adj, r_raw = ds.frame["T0"].pct_change(), raw["T0"].pct_change()
+    assert np.isclose(r_adj.loc[ex], r_raw.loc[ex], atol=0.02)            # the ex-date keeps its market return
+    assert np.allclose(r_adj.iloc[201:], df["T0"].pct_change().iloc[201:])  # later returns unchanged
+    assert np.isclose(ds.frame["T0"].iloc[199], 0.6 * last)                 # earlier prices scaled by 1 - D/P
+    too_big = f"ticker,ex_date,method,factor,note\nT0,{ex},dividend,{2 * last},typo\n"
+    with data_dir({"prices_kase.csv": df.to_csv(), "corporate_actions.csv": too_big}):
+        raises(lambda: loaders.load_prices("kase"), "corporate_actions.csv", "не меньше цены")
+
+
 def test_corporate_actions_are_validated():
     ok = "ticker,ex_date,method,factor,note\n"
     cases = [("ticker,date,method\nT0,2021-05-03,ratio\n", "нет столбцов ex_date"),
              (ok + "T0,03.05.2021,ratio,,\n", "ex_date не распознана"),
              (ok + "T0,2021-05-03,split,2,\n", "метод «split» не поддерживается"),
-             (ok + "T0,2021-05-03,factor,,\n", "требует положительного множителя"),
+             (ok + "T0,2021-05-03,factor,,\n", "метод factor требует положительного"),
              (ok + "T0,2021-05-03,ratio,,\nT0,2021-05-03,factor,2,\n", "указано несколько раз")]
     for text, fragment in cases:
         with data_dir({"prices_kase.csv": prices_csv(), "corporate_actions.csv": text}):
