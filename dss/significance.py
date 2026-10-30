@@ -7,7 +7,14 @@
   circular block bootstrap: daily returns are autocorrelated and volatility
   clusters, so days are resampled in blocks; all strategies share the same
   resampled days (paired test). The Sharpe ratio is recomputed on every
-  resample with the same formula as :func:`dss.clustering.performance`.
+  resample with the same formula as :func:`dss.clustering.performance`:
+  (geometric annual return - r_f) / (daily standard deviation * sqrt(252)),
+  i.e. the usual sqrt(252) annualisation that assumes serially uncorrelated
+  daily returns (Lo, 2002). The block length is the rule of thumb n^(1/3)
+  (Hall, Horowitz and Jing, 1995), fixed before the experiments and not tuned.
+  When several strategies are compared with one reference on the same sample,
+  :func:`holm` adjusts the p-values for multiple comparisons (Holm, 1979); the
+  tests remain exploratory because the sample is a single short period.
 * Return forecasts - the Diebold-Mariano test of equal predictive accuracy
   against the naive forecast r_hat = 0 (no predictability), with the
   Harvey-Leybourne-Newbold small-sample correction. The loss of a day is the
@@ -25,8 +32,24 @@ N_BOOT = 2000
 
 
 def block_length(n: int) -> int:
-    """Rule-of-thumb block length n^(1/3) (about 10 days for four years of data)."""
+    """Rule-of-thumb block length round(n^(1/3)): 10 days for 925 trading days (2023-2026),
+    12 days for 1,671 days (2020-2026); at least 2."""
     return max(2, int(round(n ** (1 / 3))))
+
+
+def holm(p) -> np.ndarray:
+    """Holm (1979) step-down adjustment of p-values; NaN entries are left out and returned as NaN.
+    Controls the family-wise error rate over the comparisons passed together."""
+    p = np.asarray(p, float)
+    out = np.full(p.shape, np.nan)
+    ok = np.where(np.isfinite(p))[0]
+    if len(ok) == 0:
+        return out
+    order = ok[np.argsort(p[ok])]
+    m = len(order)
+    adj = np.maximum.accumulate((m - np.arange(m)) * p[order])
+    out[order] = np.minimum(adj, 1.0)
+    return out
 
 
 def block_bootstrap_indices(n: int, n_boot: int = N_BOOT, block: int | None = None,
@@ -54,7 +77,8 @@ def sharpe_tests(daily: pd.DataFrame, risk_free: float = config.RISK_FREE, refer
                  n_boot: int = N_BOOT, block: int | None = None, seed: int = config.RANDOM_SEED,
                  level: float = 0.95) -> pd.DataFrame:
     """Sharpe with bootstrap CI per strategy, and its difference to ``reference``
-    with CI and a two-sided bootstrap p-value (H0: equal Sharpe ratios)."""
+    with CI, a two-sided bootstrap p-value (H0: equal Sharpe ratios) and the
+    Holm-adjusted p-value over all comparisons with the reference (``p_holm``)."""
     r = daily.dropna().to_numpy().T                       # strategies x days
     idx = block_bootstrap_indices(r.shape[1], n_boot, block, seed)
     point = sharpe(r, risk_free)
@@ -75,6 +99,7 @@ def sharpe_tests(daily: pd.DataFrame, risk_free: float = config.RISK_FREE, refer
             row |= {"diff": np.nan, "diff_low": np.nan, "diff_high": np.nan, "p_value": np.nan}
         rows.append(row)
     out = pd.DataFrame(rows, index=pd.Index(cols, name="strategy"))
+    out["p_holm"] = holm(out["p_value"])
     out.attrs |= {"reference": reference, "n_boot": n_boot, "block": block or block_length(r.shape[1]),
                   "n_days": r.shape[1], "level": level}
     return out

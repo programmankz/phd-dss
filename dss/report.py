@@ -76,7 +76,7 @@ def build_report(r) -> str:
 <div class="grid g2"><div>{_tbl(b.metrics, 2, pct=('total_return', 'annual_return', 'annual_vol', 'max_drawdown', 'turnover'))}</div><div>{_tbl(s.metrics, 4)}</div></div>
 <h3>Статистическая значимость (ФТ-IV-13)</h3>
 <div class="grid g2"><div>{_tbl(sig_sharpe, 2)}<p class="note">Блочный бутстреп Шарпа: {r.sharpe_tests.attrs['n_boot']} повторов,
-блоки по {r.sharpe_tests.attrs['block']} дн.; p — гипотеза равенства Шарпа стратегии и {html.escape(r.sharpe_tests.attrs['reference'])}.</p></div>
+блоки по {r.sharpe_tests.attrs['block']} дн.; p — гипотеза равенства Шарпа стратегии и {html.escape(r.sharpe_tests.attrs["reference"])}; p с поправкой Холма учитывает число сравнений.</p></div>
 <div>{_tbl(sig_dm, 3)}<p class="note">Тест Диболда–Мариано против наивного прогноза r̂ = 0; DM &lt; 0 — модель точнее.</p></div></div>
 <h2>Чувствительность правил интеграции</h2>
 {_tbl(sens['coefficients'], 2, pct=('×0,5', '×0,75', '×1', '×1,25', '×1,5'))}

@@ -91,6 +91,15 @@ def test_bootstrap_sharpe_matches_backtest_metric_and_is_reproducible():
     assert a.loc["Copy", "diff"] == 0 and a.loc["Copy", "p_value"] == 1.0   # paired resampling
     assert a.loc["Better", "diff_low"] > 0 and a.loc["Better", "p_value"] < 0.01
     assert a.attrs["block"] == significance.block_length(750) == 9
+    assert a.loc["Better", "p_holm"] >= a.loc["Better", "p_value"]       # adjusted p is never smaller
+    assert np.isnan(a.loc["Equal Weighted", "p_holm"])
+
+
+def test_holm_adjustment_is_step_down_and_monotone():
+    p = significance.holm([0.01, 0.04, 0.03, np.nan])
+    assert np.allclose(p[:3], [0.03, 0.06, 0.06]) and np.isnan(p[3])    # 3*0.01, max(2*0.03, 3*0.04 -> 0.06)
+    assert np.all(significance.holm([0.5, 0.9]) <= 1.0)
+    assert np.isnan(significance.holm([np.nan])).all()
 
 
 def test_block_bootstrap_indices_are_circular_blocks():
@@ -144,8 +153,14 @@ def test_paper_protocol_is_one_chronological_split():
 def test_risk_free_rate_depends_on_universe():
     assert config.Settings(universe="nse").risk_free == config.RISK_FREE == 0.05
     kase = config.Settings(universe="kase")
-    assert config.RISK_FREE_BY_UNIVERSE["kase"] is None              # placeholder until the NBK rate is given
-    assert kase.risk_free == config.RISK_FREE and "заглушка" in kase.risk_free_note
+    assert config.RISK_FREE_BY_UNIVERSE["kase"] is None              # taken from data/nbk_base_rate.csv when present
+    from dss.data.loaders import mean_base_rate
+    mean = mean_base_rate(config.KASE_RATE_START)
+    if mean is None:                                                 # no rates file: placeholder
+        assert kase.risk_free == config.RISK_FREE and "заглушка" in kase.risk_free_note
+    else:
+        assert kase.risk_free == round(mean, 4) and 0.08 < kase.risk_free < 0.20
+        assert "базовая ставка НБ РК" in kase.risk_free_note
     assert config.Settings(universe="kase", risk_free=0.02).risk_free_note == "задана вручную"
     old = config.RISK_FREE_BY_UNIVERSE["kase"]
     config.RISK_FREE_BY_UNIVERSE["kase"] = 0.1

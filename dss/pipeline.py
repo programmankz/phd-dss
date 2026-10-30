@@ -171,7 +171,7 @@ def significance_tables(r: RunResult, fmt=lambda v: num(v, 2)) -> tuple[pd.DataF
     t1 = pd.DataFrame({"Шарп": sh["sharpe"], "95% ДИ": [ci(a, b) for a, b in zip(sh.ci_low, sh.ci_high)],
                        f"Разница с {ref}": sh["diff"],
                        "95% ДИ разницы": [ci(a, b) for a, b in zip(sh.diff_low, sh.diff_high)],
-                       "p-значение": sh["p_value"]}, index=sh.index)
+                       "p-значение": sh["p_value"], "p (поправка Холма)": sh["p_holm"]}, index=sh.index)
     t2 = pd.DataFrame({"MSE·10⁴": dm["mse_model"] * 1e4, "MSE наивного·10⁴": dm["mse_naive"] * 1e4,
                        "DM": dm["dm"], "p-значение": dm["p_value"], "Вывод (α = 5%)": dm["verdict"]},
                       index=dm.index)
