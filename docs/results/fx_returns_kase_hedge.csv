@@ -1,0 +1,2 @@
+period,n_weeks,corr_weekly,corr_weekly_spearman,corr_daily,stocks,source
+2019-01-11 – 2026-10-09,405,-0.04322832227278781,0.028044500812799456,0.06833335746175974,"HSBK,KSPI,CCBN,KZTK,KCEL,KEGC,KZTO,KMGZ,KZAP",CSV: prices_kase.csv; корпоративные события: 1 (corporate_actions.csv)

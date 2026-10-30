@@ -1,0 +1,11 @@
+operation,seconds_median,repeats,seconds_min,seconds_max,note
+Module I: macro.run (full GDP panel),22.066942946999916,5,21.33967343300037,22.534044129999984,214 economies
+"Module IV: signals.run, KASE, 3 models (ridge, rf, gb)",3.8089836080002897,3,3.7751973559998078,3.869325334000223,9 stocks
+"Module IV: signals.run, KASE, 8 scikit-learn models",16.70775586300033,3,16.459553918999973,16.89261343299995,9 stocks
+"Module IV: signals.run, NSE, 3 models (ridge, rf, gb)",10.89494292099971,3,10.824097957000049,11.21462756300025,20 stocks
+"pipeline.run, cold cache (all modules and the Module IV backtest)",32.285534105999886,1,32.285534105999886,32.285534105999886,
+"pipeline.run, warm cache (recommendation for cached settings)",0.07588972199982891,5,0.07039803099996789,0.07732912899973599,
+integration.decide alone,0.027017247000003408,5,0.026351413000156754,0.027090248000149586,
+"change of investor profile, decision only",0.07155875900025421,1,0.07155875900025421,0.07155875900025421,Modules I-IV reused from the cache
+"change of investor profile, with the Module IV backtest",4.524517934999949,1,4.524517934999949,4.524517934999949,backtest recomputed for the new limits
+"same profile change, cached",0.11341242000025886,5,0.11089410500017038,0.11568615599981058,

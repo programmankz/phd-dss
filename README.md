@@ -58,12 +58,18 @@ python -m dss.cli serve         # веб-интерфейс: http://127.0.0.1:80
 
 ```bash
 python -m dss.cli decide --profile conservative --scenario stress   # рекомендация в консоли
+python -m dss.cli decide --profile conservative --limits strict      # строгая политика лимитов: отказ вместо ослабления
 python -m dss.cli significance --universe nse --protocol paper --cov sample --rebalance D --tc 0 --no-caps
                                      # эксперимент [A4] «как в статье» (в интерфейсе — кнопка «Параметры статьи [A4]»)
 python -m dss.cli report -o report.html                              # автономный HTML-отчёт
 python -m dss.cli significance       # 95% ДИ Шарпа стратегий и тест Диболда–Мариано (ФТ-IV-13)
 python -m dss.cli sensitivity        # чувствительность и монотонность правил интеграции
 python scripts/reproduce.py          # воспроизведение статей [A1]–[A4] → docs/reproduction.md (≈ 2 мин)
+python scripts/end_to_end.py         # сквозной point-in-time бэктест СППР на KASE → docs/results/e2e_* (≈ 2 мин)
+python scripts/end_to_end.py --modules 12 --start 2020-01-06   # только правила Модулей I–II, 2020–2026
+python scripts/end_to_end.py --sensitivity --perturb 2025-01-01  # чувствительность коэффициентов, проверка на утечку будущего
+python scripts/fx_returns.py         # корреляции курсов на доходностях (а не уровнях), EW KASE vs USD/KZT
+python scripts/timing.py             # время работы модулей и конвейера → docs/results/timing.csv
 python -m dss.cli export -o tables.xlsx   # все таблицы модулей в Excel (нужен openpyxl; иначе -o tables.zip — CSV)
 ```
 
@@ -90,7 +96,7 @@ GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) на к�
 | `prices_kase.csv` | `Date,HSBK,KSPI,…` (цены закрытия) | `python -m dss.cli fetch kase` (графики kase.kz) или экспорт с kase.kz | III, IV |
 | `fundamentals_kase.csv` | `ticker,sector,PB,PE` | секторы — `fetch kase`; P/B, P/E — отчётность эмитентов | III |
 | `prices_nse.csv` | `Date,HDFCBANK.NS,…` | `python -m dss.cli fetch nse` (нужен `yfinance`) | III, IV |
-| `corporate_actions.csv` | `ticker,ex_date,method,factor,note` | необязательно, вручную: сплиты, выделения ([SETUP, п. 4.6](docs/SETUP.md#46-корпоративные-события--corporate_actionscsv-необязательно)) | III, IV |
+| `corporate_actions.csv` | `ticker,ex_date,method,factor,note` | вручную: сплиты, выделения, дивиденды (в репозитории — дивиденд KZTK 2025 г.; [SETUP, п. 4.6](docs/SETUP.md#46-корпоративные-события--corporate_actionscsv-необязательно)) | III, IV |
 
 ## Результаты воспроизведения статей
 
@@ -115,12 +121,17 @@ dss/
 webapp/            Flask-интерфейс (6 страниц)
 tests/             test_core — научные инварианты (нет утечки, ограничения, табл. 9–10);
                    test_loaders — проверка CSV; test_analysis — правила интеграции и тесты значимости;
-                   test_system — конвейер целиком, НФТ-01 и веб-экраны; test_reproduce — воспроизведение статей
+                   test_system — конвейер целиком, НФТ-01 и веб-экраны; test_reproduce — воспроизведение статей;
+                   test_end_to_end — учёт доходностей и лаг публикации ВВП в сквозном бэктесте
 docs/progress.md   состояние работ по ТЗ (docs/techspecs.md) и принятые допущения
 docs/methodology.md  соответствие кода статьям и известные расхождения
 docs/reproduction.md воспроизведение статей [A1]–[A4] на реальных данных (python scripts/reproduce.py)
-docs/results/        таблицы воспроизведения в CSV
+docs/end_to_end.md   сквозная оценка СППР на KASE (python scripts/end_to_end.py), таблицы 4–5 статьи о системе
+docs/results/        таблицы воспроизведения и сквозного бэктеста (e2e_*) в CSV
 scripts/reproduce.py         воспроизведение статей [A1]–[A4]
+scripts/end_to_end.py        сквозной point-in-time бэктест интегрированной СППР (KASE, 2020/2023–2026)
+scripts/fx_returns.py        валютный риск на доходностях: корреляции, PC1, EW KASE vs USD/KZT
+scripts/timing.py            вычислительная производительность модулей и конвейера
 scripts/make_screenshots.py  скриншоты интерфейса (KASE — docs/screenshots/, NSE — docs/screenshots/nse/)
 ```
 

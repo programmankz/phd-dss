@@ -1,0 +1,13 @@
+tag,table4_raw
+universe,"HSBK,CCBN,KZTK,KCEL,KEGC,KZTO,KZAP"
+start,2023-01-17
+end,2026-10-09
+n_days,924
+block,10
+n_boot,2000
+mean_base_rate,0.16226725240226345
+n_rebalancing,195
+tc_bps,10.0
+corporate_actions,False
+ic_ensemble,0.01374392703791601
+source,"CSV: prices_kase.csv (без корпоративных событий); CSV: nbk_base_rate.csv (33 решений до 2026-10-27), tb3ms.csv (до 2026-09)"
