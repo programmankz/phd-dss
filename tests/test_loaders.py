@@ -285,3 +285,52 @@ def test_corporate_actions_are_validated():
     for text, fragment in cases:
         with data_dir({"prices_kase.csv": prices_csv(), "corporate_actions.csv": text}):
             raises(lambda: loaders.load_prices("kase"), "corporate_actions.csv", fragment)
+
+
+# ------------------------------------------------------------------ KASE dividends and volumes
+def test_kase_ex_date_register_at_midnight_t2_and_t0():
+    cal = pd.bdate_range("2015-11-02", "2015-11-30").append(pd.bdate_range("2023-05-22", "2023-06-09"))
+    # T+2, record Wed 2023-05-31: settle by Tue 30 -> deal Fri 26 -> ex-date Mon 29 (HSBK 2023)
+    assert loaders.kase_ex_date(pd.Timestamp("2023-05-31"), cal) == pd.Timestamp("2023-05-29")
+    # record on a Sunday: the last trading day before it is Fri 2 June -> ex-date Thu 1 June
+    assert loaders.kase_ex_date(pd.Timestamp("2023-06-04"), cal) == pd.Timestamp("2023-06-01")
+    # T+0 before the switch: ex-date is the first trading day on or after the record date
+    assert loaders.kase_ex_date(pd.Timestamp("2015-11-11"), cal, "2015-12-09") == pd.Timestamp("2015-11-11")
+    assert loaders.kase_ex_date(pd.Timestamp("2015-11-15"), cal, "2015-12-09") == pd.Timestamp("2015-11-16")
+
+
+def test_kase_dividends_are_parsed_and_empty_entries_dropped():
+    import json
+    records = [{"is_paid": True, "protocol_date": "2025-05-15", "fixation_date": "2025-05-25",
+                "period_start_date": "2024-01-01", "period_end_date": "2024-12-31",
+                "payment_start_date": "2025-05-25", "per_share": 19923.74, "total_sum": None},
+               {"is_paid": False, "protocol_date": None, "fixation_date": None, "per_share": None},
+               {"is_paid": True, "fixation_date": "1996-12-31", "per_share": 0.0, "total_sum": 7.8e7}]
+
+    real_get, loaders._get = loaders._get, lambda url, timeout=30: json.dumps(records).encode()
+    try:
+        with data_dir({}) as tmp:
+            df = loaders.fetch_kase_dividends(["KZTK"])
+            saved = pd.read_csv(tmp / "dividends_kase.csv")
+    finally:
+        loaders._get = real_get
+    assert len(df) == 1 and df.loc[0, "record_date"] == "2025-05-25" and df.loc[0, "per_share"] == 19923.74
+    assert list(saved.columns[:3]) == ["ticker", "record_date", "per_share"]
+
+
+def test_kase_history_keeps_turnover_and_drops_todays_bar():
+    import json
+    day = 86400 * 19000
+    today = int(pd.Timestamp.today().normalize().timestamp())
+
+    def fake_get(url, timeout=30):
+        return json.dumps({"s": "ok", "t": [day, day + 86400 * 2, today], "c": [10.0, 11.0, 12.0],
+                           "v": [1e6, 2e6, 5.0]}).encode()
+
+    real_get, loaders._get = loaders._get, fake_get
+    try:
+        out = loaders.fetch_kase_history(["A"], start="2022-01-01")
+    finally:
+        loaders._get = real_get
+    assert out["close"]["A"].tolist() == [10.0, 11.0]
+    assert out["volume"]["A"].tolist() == [1e6, 2e6]

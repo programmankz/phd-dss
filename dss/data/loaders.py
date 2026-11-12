@@ -418,27 +418,98 @@ def fetch_gdp(last_year: int = 2024) -> tuple[pd.DataFrame, str]:
         return fetch_worldbank_gdp(last_year=last_year), "World Bank WDI (NY.GDP.MKTP.KD.ZG)"
 
 
-def fetch_kase(tickers=None, start: str = "2019-01-01", end: str | None = None) -> pd.DataFrame:
-    """Daily closes (KZT) from the kase.kz chart feed. Unadjusted for dividends, as on KASE."""
+def fetch_kase_history(tickers=None, start: str = "2019-01-01", end: str | None = None) -> dict[str, pd.DataFrame]:
+    """Daily bars from the kase.kz chart feed (TradingView UDF): {"close": KZT, "volume": turnover
+    in KZT (field ``v``; equals ``volume_kzt`` of /api/instruments/trade-info)}. Closes are
+    unadjusted for dividends and forward-filled over days without trades; volumes are left NaN
+    on those days. Today's unfinished intraday bar is dropped."""
+    today = pd.Timestamp.today().normalize()
     t0 = int(pd.Timestamp(start).timestamp())
-    t1 = int((pd.Timestamp(end) if end else pd.Timestamp.today().normalize() + pd.Timedelta(days=1)).timestamp())
-    out = {}
+    t1 = int((pd.Timestamp(end) if end else today + pd.Timedelta(days=1)).timestamp())
+    close, volume = {}, {}
     for t in tickers or KASE_TICKERS:
         url = f"https://kase.kz/tv-charts/securities/history?symbol={t}&resolution=D&from={t0}&to={t1}"
         try:
             j = json.loads(_get(url))
-        except OSError as exc:
+        except (OSError, ValueError) as exc:  # HTTP errors; HTML error pages are not JSON
             print(f"  {t}: {exc} — пропущен")
             continue
         if j.get("s") != "ok" or not j.get("t"):
             print(f"  {t}: нет данных на kase.kz — пропущен")
             continue
-        out[t] = pd.Series(j["c"], index=pd.to_datetime(j["t"], unit="s").normalize(), dtype=float)
-    if not out:
+        idx = pd.to_datetime(j["t"], unit="s").normalize()
+        keep = idx < today
+        close[t] = pd.Series(j["c"], index=idx, dtype=float)[keep]
+        if "v" in j:
+            volume[t] = pd.Series(j["v"], index=idx, dtype=float)[keep]
+    if not close:
         raise RuntimeError("kase.kz не вернул цен ни по одному тикеру")
-    px = pd.DataFrame(out).sort_index()
+    px = pd.DataFrame(close).sort_index()
     px.index.name = "Date"
-    return px.ffill()
+    vol = pd.DataFrame(volume).reindex(px.index)
+    return {"close": px.ffill(), "volume": vol}
+
+
+def fetch_kase(tickers=None, start: str = "2019-01-01", end: str | None = None) -> pd.DataFrame:
+    """Daily closes (KZT) from the kase.kz chart feed. Unadjusted for dividends, as on KASE."""
+    return fetch_kase_history(tickers, start, end)["close"]
+
+
+# Dates from which KASE share deals settle T+2 only (Board decisions, KASE news 1279747,
+# 1280974, 1282194). Before them deals settled T+0. Shares listed later trade T+2 from listing.
+KASE_T2_FROM = {"KCEL": "2015-11-25", "RDGZ": "2015-11-25", "HSBK": "2015-12-09", "KZTK": "2015-12-09",
+                "CCBN": "2015-12-09", "GB_KZMS": "2015-12-09", "KEGC": "2015-12-23", "KZTO": "2015-12-23"}
+KASE_T2_DEFAULT = "2015-12-23"
+KASE_DIVIDENDS_URL = "https://kase.kz/api/instruments/shares/{ticker}/dividends"
+
+
+def kase_ex_date(record: pd.Timestamp, calendar: pd.DatetimeIndex, t2_from: str = KASE_T2_DEFAULT) -> pd.Timestamp:
+    """First trading day without the right to the dividend. The shareholder register is fixed
+    as of 00:00 of the record date R, so a deal must settle on a trading day strictly before R:
+    with T+0 the ex-date is the first trading day >= R, with T+2 it is one trading day before
+    the last trading day < R (the deal of the day before that settles on it)."""
+    record = pd.Timestamp(record)
+    last = int(calendar.searchsorted(record, side="left")) - 1      # last trading day < R
+    if last < 1:
+        raise ValueError(f"record date {record:%Y-%m-%d} is before the calendar")
+    t2 = calendar[last - 1] >= pd.Timestamp(t2_from)
+    if t2:
+        return calendar[last - 1]
+    if last + 1 >= len(calendar):
+        raise ValueError(f"record date {record:%Y-%m-%d} is after the calendar")
+    return calendar[last + 1]
+
+
+def parse_kase_dividends(records: list, ticker: str) -> pd.DataFrame:
+    """Rows of /api/instruments/shares/<ticker>/dividends -> ticker, record_date, per_share, ...;
+    entries without a record date or a positive amount per share are dropped."""
+    cols = ["ticker", "record_date", "per_share", "protocol_date", "payment_start_date",
+            "period_start", "period_end", "is_paid"]
+    rows = [{"ticker": ticker, "record_date": r.get("fixation_date"), "per_share": r.get("per_share"),
+             "protocol_date": r.get("protocol_date"), "payment_start_date": r.get("payment_start_date"),
+             "period_start": r.get("period_start_date"), "period_end": r.get("period_end_date"),
+             "is_paid": r.get("is_paid")} for r in records]
+    df = pd.DataFrame(rows, columns=cols)
+    df["per_share"] = pd.to_numeric(df["per_share"], errors="coerce")
+    df = df[df["record_date"].notna() & (df["per_share"] > 0)]
+    return df.sort_values("record_date").reset_index(drop=True)
+
+
+def fetch_kase_dividends(tickers=None, cache: Path | None = None) -> pd.DataFrame:
+    """Dividend history of KASE shares (record date and amount per share, as published by
+    the exchange); writes data/dividends_kase.csv."""
+    frames = []
+    for t in tickers or KASE_TICKERS:
+        try:
+            frames.append(parse_kase_dividends(json.loads(_get(KASE_DIVIDENDS_URL.format(ticker=t))), t))
+        except (OSError, ValueError) as exc:
+            print(f"  {t}: {exc} — пропущен")
+    if not frames:
+        raise RuntimeError("kase.kz не вернул дивидендов ни по одному тикеру")
+    df = pd.concat(frames, ignore_index=True)
+    cache = cache or data_dir() / "dividends_kase.csv"
+    df.to_csv(cache, index=False)
+    return df
 
 
 def fetch_nbk_day(date: pd.Timestamp) -> dict:

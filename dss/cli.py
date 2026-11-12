@@ -32,7 +32,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="dss", description="СППР управления инвестиционным портфелем")
     sub = p.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch", help="загрузить реальные данные")
-    f.add_argument("what", choices=["gdp", "fx", "nse", "kase", "rates"])
+    f.add_argument("what", choices=["gdp", "fx", "nse", "kase", "rates", "kase-dividends"])
     f.add_argument("--start", default=None)
     f.add_argument("--tickers", default=None, help="kase/nse: тикеры через запятую вместо набора по умолчанию")
     for name in ("warmup", "decide", "report", "sensitivity", "significance", "export"):
@@ -74,6 +74,11 @@ def main(argv=None) -> int:
             tb = loaders.fetch_tb3ms()
             print(f"nbk_base_rate.csv: {len(nbk)} изменений ставки, последнее {nbk['effective_from'].max():%Y-%m-%d}; "
                   f"tb3ms.csv: {len(tb)} месяцев, последний {tb['Date'].max()}")
+        elif a.what == "kase-dividends":
+            tickers = a.tickers.split(",") if a.tickers else loaders.KASE_TICKERS
+            df = loaders.fetch_kase_dividends(tickers)
+            print(f"dividends_kase.csv: {len(df)} выплат по {df['ticker'].nunique()} бумагам, "
+                  f"даты фиксации {df['record_date'].min()} – {df['record_date'].max()}")
         elif a.what == "kase":
             tickers = a.tickers.split(",") if a.tickers else loaders.KASE_TICKERS
             df = loaders.fetch_kase(tickers, start=a.start or "2019-01-01")
