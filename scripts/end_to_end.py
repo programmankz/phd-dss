@@ -126,6 +126,17 @@ def weekly_dates(days: pd.DatetimeIndex, start, end) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(weeks.drop_duplicates(keep="first").index)
 
 
+def resolve_start(start, first_signal, log=print) -> pd.Timestamp:
+    """Start of the run: ``start`` or, when Module IV ranks begin later, the first date with ranks
+    (with a warning instead of an error, so that the default ``--start`` survives data updates)."""
+    start, first_signal = pd.Timestamp(start), pd.Timestamp(first_signal)
+    if first_signal <= start:
+        return start
+    log(f"  WARNING: Module IV ranks start on {first_signal:%Y-%m-%d}, later than --start {start:%Y-%m-%d}; "
+        f"the run starts on {first_signal:%Y-%m-%d}")
+    return first_signal
+
+
 # ----------------------------------------------------------------------------- configurations
 @dataclass(frozen=True)
 class Config:
@@ -134,6 +145,13 @@ class Config:
     fx: bool           # dollar share from rule (6); else h = 0
     m4: bool           # weights from Module IV optimiser (4); else equal weights
     d_fixed: float | None = None   # overrides d (EW 100 %: 1.0)
+    clusters: bool | None = None   # Module III cluster limits; None: on together with m4 (as in Tables 4-5).
+                                   # m4 off, clusters on: equal weights per cluster, capped (cluster_equal_weights);
+                                   # m4 on, clusters off: optimiser (4) with the per-asset cap only
+
+    @property
+    def use_clusters(self) -> bool:
+        return self.m4 if self.clusters is None else self.clusters
 
 
 TABLE4 = [Config("EW 100%", False, False, False, 1.0), Config("EW + KZT", False, False, False),
@@ -162,8 +180,9 @@ class Engine:
             s = cached("e2e_signals", _fingerprint(inp.prices), fn) if use_cache else fn()
             self.ranks, self.ic = s.ranks, float(s.metrics.iloc[-1]["IC"])
             first = s.ranks.dropna(how="all").index[0]
-            if first > self.start:
-                raise SystemExit(f"сигналы Модуля IV доступны с {first:%Y-%m-%d}: укажите --start не раньше")
+            start = resolve_start(self.start, first, log)
+            if start != self.start:
+                self.start, self.rebal = start, weekly_dates(self.days, start, end)
             log(f"  Module IV walk-forward: {time.perf_counter() - t0:.1f} s, ranks from {first:%Y-%m-%d}, IC = {self.ic:.3f}")
         self._macro, self._clusters, self._fx = {}, {}, {}
 
@@ -209,13 +228,17 @@ class Engine:
             out["fx_risk"] = r
         else:
             h = 0.0
-        if cfg.m4:
+        labels = None
+        if cfg.use_clusters:
             labels = self.clusters_at(t).to_numpy()
             wm, cc, relaxed = portfolio.feasible_limits(labels, self.profile.max_asset_weight, self.profile.cluster_cap)
+            out |= {"k": int(len(set(labels))), "w_max_eff": wm, "c_eff": cc, "relaxed": relaxed}
+        if cfg.m4:
             s = self.ranks.loc[:t].iloc[-1].reindex(self.inp.prices.columns).fillna(0.5).to_numpy()
             w = portfolio.max_signal_to_risk(s, self.cov_at(t), self.profile.max_asset_weight, labels, None,
-                                             self.profile.cluster_cap)
-            out |= {"k": int(len(set(labels))), "w_max_eff": wm, "c_eff": cc, "relaxed": relaxed}
+                                             self.profile.cluster_cap if labels is not None else None)
+        elif labels is not None:
+            w = portfolio.cluster_equal_weights(labels, self.profile.max_asset_weight, self.profile.cluster_cap)
         else:
             w = np.full(n, 1.0 / n)
         out |= {"d": d, "h": h}
