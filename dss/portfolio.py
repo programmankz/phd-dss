@@ -117,6 +117,30 @@ def signal_weighted(s, w_max=1.0):
     return w / w.sum()
 
 
+def cluster_equal_weights(groups, w_max: float = 1.0, cap: float | None = None) -> np.ndarray:
+    """Equal weight per cluster, split equally inside the cluster (Module III without signals),
+    within the per-asset cap and the cluster cap: the feasible start of the optimiser after
+    :func:`feasible_limits`. With singleton clusters it is the equal-weighted portfolio."""
+    g = np.asarray(groups)
+    labs, counts = np.unique(g, return_counts=True)
+    w_eff, cap_eff, _ = feasible_limits(g, w_max, cap if cap is not None else 1.0)
+    allowed = np.minimum(np.minimum(cap_eff, 1.0 / len(labs)), counts * w_eff)
+    w = np.zeros(len(g))
+    for lab, cnt, a in zip(labs, counts, allowed):
+        w[g == lab] = a / cnt
+    # spread what the caps cut off over the clusters that still have room (water-filling)
+    room = np.array([min(cap_eff, cnt * w_eff) for cnt in counts]) - allowed
+    for _ in range(len(labs)):
+        rest = 1.0 - w.sum()
+        if rest <= 1e-12 or room.sum() <= 1e-12:
+            break
+        add = np.minimum(room, rest * room / room.sum())
+        for lab, cnt, x in zip(labs, counts, add):
+            w[g == lab] += x / cnt
+        room = room - add
+    return w / w.sum()
+
+
 STRATEGIES = ("Signal Weighted", "Max Signal-to-Risk", "Min Variance", "Equal Weighted")
 
 
