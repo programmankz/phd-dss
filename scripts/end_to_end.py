@@ -49,7 +49,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dss import clustering, config, fx, integration, macro, portfolio, signals, significance  # noqa: E402
+from dss import baselines, clustering, config, fx, integration, macro, portfolio, signals, significance  # noqa: E402
 from dss.data import loaders  # noqa: E402
 from dss.pipeline import cached, _fingerprint  # noqa: E402
 
@@ -145,12 +145,15 @@ class Config:
     fx: bool           # dollar share from rule (6); else h = 0
     m4: bool           # weights from Module IV optimiser (4); else equal weights
     d_fixed: float | None = None   # overrides d (EW 100 %: 1.0)
+    weights: str | None = None     # baseline rule of the risky part (dss.baselines), replaces m4/clusters
     clusters: bool | None = None   # Module III cluster limits; None: on together with m4 (as in Tables 4-5).
                                    # m4 off, clusters on: equal weights per cluster, capped (cluster_equal_weights);
                                    # m4 on, clusters off: optimiser (4) with the per-asset cap only
 
     @property
     def use_clusters(self) -> bool:
+        if self.weights:
+            return False
         return self.m4 if self.clusters is None else self.clusters
 
 
@@ -233,7 +236,13 @@ class Engine:
             labels = self.clusters_at(t).to_numpy()
             wm, cc, relaxed = portfolio.feasible_limits(labels, self.profile.max_asset_weight, self.profile.cluster_cap)
             out |= {"k": int(len(set(labels))), "w_max_eff": wm, "c_eff": cc, "relaxed": relaxed}
-        if cfg.m4:
+        if cfg.weights:
+            window = self.returns.loc[:t].dropna().iloc[-config.COV_WINDOW:]
+            ranks = (self.ranks.loc[:t].iloc[-1].reindex(self.inp.prices.columns).fillna(0.5).to_numpy()
+                     if self.ranks is not None else None)
+            rf = float(self.inp.rates["kzt"].loc[:t].iloc[-1])
+            w = baselines.weights(cfg.weights, window, self.profile.max_asset_weight, ranks, rf)
+        elif cfg.m4:
             s = self.ranks.loc[:t].iloc[-1].reindex(self.inp.prices.columns).fillna(0.5).to_numpy()
             w = portfolio.max_signal_to_risk(s, self.cov_at(t), self.profile.max_asset_weight, labels, None,
                                              self.profile.cluster_cap if labels is not None else None)
