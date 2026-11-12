@@ -897,11 +897,14 @@ def parse_cbar(xml: bytes) -> tuple[pd.Timestamp, float] | None:
 
 
 def fetch_azn(start: str = "2000-01-01", end: str | None = None, have: pd.Series | None = None,
-              workers: int = 6) -> pd.Series:
-    """AZN per USD, daily official rate of cbar.az (one XML per business day); only the days
-    missing from ``have`` (an earlier download) are requested."""
+              workers: int = 8, checkpoint: Path | None = None, chunk: int = 500) -> pd.Series:
+    """AZN per USD, daily official rate of cbar.az (one XML per business day, ~2 s each); only
+    the days missing from ``have`` (an earlier download) are requested. Progress is printed and,
+    with ``checkpoint``, saved after every ``chunk`` days, so an interrupted run resumes."""
     from concurrent.futures import ThreadPoolExecutor
     have = have.dropna() if have is not None else pd.Series(dtype=float)
+    if checkpoint and checkpoint.exists():
+        have = pd.concat([have, pd.read_csv(checkpoint, index_col=0, parse_dates=True)["AZN"]])
     days = pd.bdate_range(start, end or pd.Timestamp.today().normalize() - pd.Timedelta(days=1))
     days = days[~days.isin(have.index)] if len(have) else days
 
@@ -910,10 +913,17 @@ def fetch_azn(start: str = "2000-01-01", end: str | None = None, have: pd.Series
             return parse_cbar(_get(CBAR_URL.format(date=d)))
         except (OSError, ValueError, ET.ParseError):
             return None
+    s = have
     with ThreadPoolExecutor(workers) as ex:
-        got = [r for r in ex.map(one, days) if r]
-    new = pd.Series(dict(got), dtype=float)
-    s = pd.concat([have, new]).groupby(level=0).last().sort_index().rename("AZN")
+        for i in range(0, len(days), chunk):
+            got = [r for r in ex.map(one, days[i:i + chunk]) if r]
+            s = pd.concat([s, pd.Series(dict(got), dtype=float)])
+            s = s.groupby(level=0).last().sort_index().rename("AZN")
+            s.index.name = "Date"
+            if checkpoint:
+                s.to_csv(checkpoint)
+            print(f"  AZN: {min(i + chunk, len(days))}/{len(days)} дней запрошено", flush=True)
+    s = s.groupby(level=0).last().sort_index().rename("AZN")
     s.index.name = "Date"
     return s
 
@@ -943,11 +953,13 @@ def fetch_fx_panel(cache: Path | None = None, start: str = "2000-01-01") -> pd.D
         cols["RUB"] = (r["USD"] / r["RUB"]).loc[start:].round(4).rename("RUB")
     path = cache or out / "fx_commodity_panel.csv"
     prev = pd.read_csv(path, index_col=0, parse_dates=True) if path.exists() else pd.DataFrame()
-    cols["AZN"] = fetch_azn(start, have=prev.get("AZN"))
+    partial = out / "fx_azn_partial.csv"         # resume point of an interrupted download
+    cols["AZN"] = fetch_azn(start, have=prev.get("AZN"), checkpoint=partial)
     cols["CLP"] = fetch_clp(pd.Timestamp(start).year)
     df = pd.DataFrame(cols).sort_index()
     df.index.name = "Date"
     df.to_csv(path)
+    partial.unlink(missing_ok=True)
     return df
 
 
