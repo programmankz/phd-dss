@@ -33,7 +33,7 @@ def main(argv=None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch", help="загрузить реальные данные")
     f.add_argument("what", choices=["gdp", "fx", "nse", "kase", "rates", "kase-dividends", "kase-extra",
-                                         "kase-index", "bonds"])
+                                         "kase-index", "bonds", "brent", "macro", "fx-panel"])
     f.add_argument("--start", default=None)
     f.add_argument("--tickers", default=None, help="kase/nse: тикеры через запятую вместо набора по умолчанию")
     for name in ("warmup", "decide", "report", "sensitivity", "significance", "export"):
@@ -75,6 +75,17 @@ def main(argv=None) -> int:
             tb = loaders.fetch_tb3ms()
             print(f"nbk_base_rate.csv: {len(nbk)} изменений ставки, последнее {nbk['effective_from'].max():%Y-%m-%d}; "
                   f"tb3ms.csv: {len(tb)} месяцев, последний {tb['Date'].max()}")
+        elif a.what == "brent":
+            df = loaders.fetch_brent(start=a.start or "2000-01-01")
+            print(f"brent.csv: {len(df)} дней, {df.index.min():%Y-%m-%d} – {df.index.max():%Y-%m-%d}")
+        elif a.what == "macro":
+            df = loaders.fetch_macro_kz(start=a.start or "2008-01")
+            print(f"macro_monthly_kz.csv: {len(df)} месяцев {df.index.min()} – {df.index.max()}; "
+                  + ", ".join(f"{c}: {df[c].notna().sum()}" for c in ("kei", "kei_nominal_bn_kzt", "cpi_yoy")))
+        elif a.what == "fx-panel":
+            df = loaders.fetch_fx_panel(start=a.start or "2000-01-01")
+            print("fx_commodity_panel.csv: " + ", ".join(
+                f"{c} {df[c].first_valid_index():%Y-%m-%d} – {df[c].last_valid_index():%Y-%m-%d}" for c in df))
         elif a.what == "kase-dividends":
             tickers = a.tickers.split(",") if a.tickers else loaders.KASE_TICKERS
             df = loaders.fetch_kase_dividends(tickers)

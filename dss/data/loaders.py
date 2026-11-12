@@ -370,8 +370,8 @@ def load_fundamentals(universe: str = "kase", tickers=None, source: str = "auto"
 # --------------------------------------------------------------------------
 # Live sources
 # --------------------------------------------------------------------------
-def _get(url: str, timeout: int = 30) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "phd-dss/1.0"})
+def _get(url: str, timeout: int = 30, agent: str = "phd-dss/1.0") -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": agent})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
@@ -681,24 +681,28 @@ def fetch_nbk(start: str = "2000-01-01", end: str | None = None,
 
 
 NBK_BASE_RATE_URL = "https://nationalbank.kz/en/news/grafik-prinyatiya-resheniy-po-bazovoy-stavke/rubrics/1544"
-TB3MS_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=TB3MS"
 
 
 def parse_nbk_base_rate(html: str) -> pd.DataFrame:
     """Rows ``effective_from,rate`` from one yearly page of the NBK decision schedule: the table
     lists "DD.MM.YYYY" and the rate in %, one decision per row; rows without a rate are skipped."""
+    import html as html_lib
     import re
-    text = re.sub(r"<[^>]+>", " ", html)
-    rows = re.findall(r"(\d{2}\.\d{2}\.\d{4})\*?\s+(\d{1,2}[.,]\d{1,2})", text)
-    df = pd.DataFrame(rows, columns=["effective_from", "rate"])
+    text = html_lib.unescape(re.sub(r"<[^>]+>", " ", html))           # "&nbsp;14.00" -> " 14.00"
+    # the pages sometimes break a date with markup: "26.04<span>.2022</span>"
+    # ... and a rate as well: "16 . 25"
+    rows = re.findall(r"(\d{2})\s*\.\s*(\d{2})\s*\.\s*(\d{4})\*?\s+(\d{1,2})\s*[.,]\s*(\d{1,2})\b", text)
+    df = pd.DataFrame([(f"{d}.{m}.{y}", f"{a}.{b}") for d, m, y, a, b in rows], columns=["effective_from", "rate"])
     df["effective_from"] = pd.to_datetime(df["effective_from"], format="%d.%m.%Y")
     df["rate"] = df["rate"].str.replace(",", ".").astype(float)
     return df
 
 
-def fetch_nbk_base_rate(cache: Path | None = None) -> pd.DataFrame:
-    """Download the NBK base rate schedule (all yearly pages linked from the navigation) and
-    keep only the dates on which the rate changed. Writes data/nbk_base_rate.csv."""
+def fetch_nbk_base_rate(cache: Path | None = None, start: str = "2008-01-01") -> pd.DataFrame:
+    """NBK policy rate by effective date; writes data/nbk_base_rate.csv. From 02.09.2015 the base
+    rate (decision schedule, all yearly pages linked from the navigation); before it the official
+    refinancing rate (NBK table of official rates since 1992), starting with the rate in force
+    on ``start``. Only the dates on which the rate changed are kept."""
     import re
     first = _get(NBK_BASE_RATE_URL).decode("utf8", "replace")
     links = sorted(set(re.findall(r"/en/news/grafik-prinyatiya-resheniy-po-bazovoy-stavke/rubrics/(\d+)", first)))
@@ -707,23 +711,244 @@ def fetch_nbk_base_rate(cache: Path | None = None) -> pd.DataFrame:
         url = NBK_BASE_RATE_URL.rsplit("/", 1)[0] + "/" + rid
         if url != NBK_BASE_RATE_URL:
             frames.append(parse_nbk_base_rate(_get(url).decode("utf8", "replace")))
-    df = pd.concat(frames).drop_duplicates("effective_from").sort_values("effective_from")
+    base = pd.concat(frames)
+    refi = parse_nbk_refinancing(_get(NBK_REFINANCING_URL).decode("utf8", "replace"))
+    refi = refi[refi["effective_from"] < BASE_RATE_FROM]
+    in_force = refi[refi["effective_from"] <= pd.Timestamp(start)].tail(1)
+    refi = pd.concat([in_force, refi[refi["effective_from"] > pd.Timestamp(start)]])
+    df = pd.concat([refi, base[base["effective_from"] >= BASE_RATE_FROM]])
+    df = df.drop_duplicates("effective_from").sort_values("effective_from")
     df = df[df["rate"].ne(df["rate"].shift())]           # keep changes only
     cache = cache or data_dir() / "nbk_base_rate.csv"
     df.assign(effective_from=df["effective_from"].dt.strftime("%Y-%m-%d")).to_csv(cache, index=False)
     return df
 
 
-def fetch_tb3ms(cache: Path | None = None, start: str = "2018-01-01") -> pd.DataFrame:
-    """Download the monthly 3-month T-bill rate (FRED TB3MS); writes data/tb3ms.csv."""
+NBK_REFINANCING_URL = "https://nationalbank.kz/ru/page/stavka-refinansirovaniya-nbk"
+BASE_RATE_FROM = pd.Timestamp("2015-09-02")      # first base rate decision
+
+
+def parse_nbk_refinancing(html: str) -> pd.DataFrame:
+    """Rows ``effective_from,rate`` of the NBK table of the official refinancing rate:
+    "DD.MM.YYYY №<resolution> от <date> <rate>"; before 1996 the table has several rate
+    columns, the first one is kept."""
+    import re
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+    rows = re.findall(r"(\d{2}\.\d{2}\.\d{4})\*?\s+№\s*[\d-]*\s*,?\s*(?:от\s*)?[\d.]*\s+(\d{1,3}(?:[.,]\d+)?)\b", text)
+    df = pd.DataFrame(rows, columns=["effective_from", "rate"])
+    df["effective_from"] = pd.to_datetime(df["effective_from"], format="%d.%m.%Y")
+    df["rate"] = df["rate"].str.replace(",", ".").astype(float)
+    return df.drop_duplicates("effective_from").sort_values("effective_from").reset_index(drop=True)
+
+
+FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
+FRED_AGENT = "curl/8.4.0"   # the FRED edge stalls requests with unknown user agents such as "phd-dss/1.0"
+
+
+def fetch_fred(series: str, start: str = "2000-01-01", tries: int = 4) -> pd.Series:
+    """One FRED series as a float Series indexed by date ("." missing values dropped). The FRED
+    edge drops some scripted connections, so the request is repeated a few times."""
     import io
-    raw = pd.read_csv(io.BytesIO(_get(TB3MS_URL)))
-    raw.columns = ["Date", "rate"]
-    raw = raw[pd.to_datetime(raw["Date"]) >= pd.Timestamp(start)]
-    raw = raw[pd.to_numeric(raw["rate"], errors="coerce").notna()]
+    for attempt in range(tries):
+        try:
+            raw = pd.read_csv(io.BytesIO(_get(FRED_URL.format(series=series), timeout=60, agent=FRED_AGENT)))
+            break
+        except (OSError, ValueError):
+            if attempt == tries - 1:
+                raise
+            time.sleep(3 * (attempt + 1))
+    s = pd.Series(pd.to_numeric(raw.iloc[:, 1], errors="coerce").to_numpy(),
+                  index=pd.DatetimeIndex(pd.to_datetime(raw.iloc[:, 0]), name="Date"), name=series)
+    return s[s.index >= pd.Timestamp(start)].dropna()
+
+
+def fetch_tb3ms(cache: Path | None = None, start: str = "2008-01-01") -> pd.DataFrame:
+    """Download the monthly 3-month T-bill rate (FRED TB3MS); writes data/tb3ms.csv."""
+    s = fetch_fred("TB3MS", start)
+    raw = pd.DataFrame({"Date": s.index.strftime("%Y-%m-%d"), "rate": s.to_numpy()})
     cache = cache or data_dir() / "tb3ms.csv"
     raw.to_csv(cache, index=False)
     return raw
+
+
+def fetch_brent(cache: Path | None = None, start: str = "2000-01-01") -> pd.DataFrame:
+    """Daily Brent spot price, USD per barrel (FRED DCOILBRENTEU, EIA); writes data/brent.csv."""
+    df = fetch_fred("DCOILBRENTEU", start).rename("brent").to_frame()
+    df.to_csv(cache or data_dir() / "brent.csv")
+    return df
+
+
+# ---------------------------------------------------------------- monthly macro data of Kazakhstan
+STAT_KEI_URL = "https://stat.gov.kz/api/iblock/element/5941/file/ru/"        # KEI, Republic, 2021-
+STAT_CPI_URL = "https://stat.gov.kz/api/iblock/element/1550/file/ru/"        # CPI by 12 divisions, 2008-
+TALDAU_KEI_URL = "https://taldau.stat.gov.kz/ru/Api/GetIndexData/4023005?period=4&dics=67"
+MONTHS_RU = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь",
+             "октябрь", "ноябрь", "декабрь"]
+
+
+def parse_stat_kei(sheets: dict) -> pd.Series:
+    """KEI table of stat.gov.kz (rows "<year> г." followed by month rows; the last column is the
+    volume index, period of the year to date vs the same period of the previous year, %)."""
+    import re
+    out = {}
+    for name, df in sheets.items():
+        if not re.search(r"\d{4}", str(name)):
+            continue
+        year = None
+        for _, row in df.iterrows():
+            cells = [str(v).strip() for v in row.tolist()]
+            y = next((re.match(r"(\d{4})\s*г", c) for c in cells if re.match(r"\d{4}\s*г", c)), None)  # "2021 г.", "2025г."
+            if y:
+                year = int(y.group(1))
+                continue
+            month = next((MONTHS_RU.index(c.lower()) + 1 for c in cells if c.lower() in MONTHS_RU), None)
+            if year and month:
+                val = pd.to_numeric(row.iloc[-1], errors="coerce")
+                if pd.notna(val):
+                    out[pd.Period(f"{year}-{month:02d}", "M")] = float(val)
+    return pd.Series(out, name="kei").sort_index()
+
+
+def parse_stat_cpi(sheets: dict) -> pd.Series:
+    """Year-on-year CPI ("Товары и услуги" under "к соответствующему месяцу предыдущего года")
+    from the yearly sheets "monthly YYYY" of stat.gov.kz. Older sheets give the growth in %,
+    newer ones the index (previous year = 100); both are returned as growth in %."""
+    import re
+    out = {}
+    for name, df in sheets.items():
+        m = re.search(r"(\d{4})", str(name))
+        if not m:
+            continue
+        year, block = int(m.group(1)), None
+        for _, row in df.iterrows():
+            label = str(row.iloc[0]).strip()
+            if label.lower().startswith("к "):
+                block = label.lower()
+            elif label == "Товары и услуги" and block == "к соответствующему месяцу предыдущего года":
+                for k, v in enumerate(row.iloc[1:13], start=1):
+                    v = pd.to_numeric(v, errors="coerce")
+                    if pd.notna(v):
+                        out[pd.Period(f"{year}-{k:02d}", "M")] = float(v) - 100 if v > 50 else float(v)
+    return pd.Series(out, name="cpi_yoy").sort_index().round(2)
+
+
+def parse_taldau_kei(records: list) -> pd.Series:
+    """Republic-level nominal KEI (bn KZT per month) from the taldau.stat.gov.kz API."""
+    rk = [r for r in records if any("РЕСПУБЛИКА" in str(n) for n in r.get("termNames", []))]
+    out = {}
+    for r in rk[:1]:
+        for p in r["periods"]:
+            d = pd.to_datetime(p["date"], format="%d.%m.%Y")
+            out[d.to_period("M")] = float(p["value"]) / 1e9
+    return pd.Series(out, name="kei_nominal_bn_kzt").sort_index().round(1)
+
+
+def fetch_macro_kz(cache: Path | None = None, start: str = "2008-01") -> pd.DataFrame:
+    """Monthly macro data of Kazakhstan; writes data/macro_monthly_kz.csv with columns
+    month, kei, kei_nominal_bn_kzt, cpi_yoy, reserves_usd_bn and assumed publication dates
+    (``published_*``, see data/README.md). International reserves are not available as a
+    machine-readable series on nationalbank.kz and stay empty."""
+    kei = parse_stat_kei(_excel_sheets(_get(STAT_KEI_URL, timeout=120)))
+    cpi = parse_stat_cpi(_excel_sheets(_get(STAT_CPI_URL, timeout=120)))
+    try:
+        nominal = parse_taldau_kei(json.loads(_get(TALDAU_KEI_URL, timeout=180)))
+    except (OSError, ValueError) as exc:
+        print(f"  taldau.stat.gov.kz: {exc} — номинальный КЭИ пропущен")
+        nominal = pd.Series(dtype=float, name="kei_nominal_bn_kzt")
+    df = pd.concat([kei, nominal, cpi], axis=1)
+    df = df[df.index >= pd.Period(start, "M")].sort_index()
+    df["reserves_usd_bn"] = float("nan")
+    m = df.index.to_timestamp(how="start")
+    nxt = m + pd.offsets.MonthBegin(1)
+    df["published_kei"] = (nxt + pd.Timedelta(days=14)).strftime("%Y-%m-%d")      # 15th of M+1
+    df["published_cpi"] = (nxt + pd.offsets.BDay(0)).strftime("%Y-%m-%d")       # 1st working day of M+1
+    df.loc[df["kei"].isna() & df["kei_nominal_bn_kzt"].isna(), "published_kei"] = None
+    df.loc[df["cpi_yoy"].isna(), "published_cpi"] = None
+    df.index = df.index.strftime("%Y-%m")
+    df.index.name = "month"
+    df.to_csv(cache or data_dir() / "macro_monthly_kz.csv")
+    return df
+
+
+def _excel_sheets(data: bytes) -> dict:
+    import io
+    try:
+        return pd.read_excel(io.BytesIO(data), header=None, sheet_name=None)
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("для таблиц stat.gov.kz в формате xlsx нужен openpyxl: pip install openpyxl") from exc
+
+
+# ---------------------------------------------------------------- commodity currencies vs USD
+CBAR_URL = "https://www.cbar.az/currencies/{date:%d.%m.%Y}.xml"
+CLP_URL = "https://mindicador.cl/api/dolar/{year}"
+AZM_PER_AZN = 5000.0      # redenomination of 01.01.2006
+
+
+def parse_cbar(xml: bytes) -> tuple[pd.Timestamp, float] | None:
+    """(rate date, AZN per USD) from one daily bulletin of the Central Bank of Azerbaijan;
+    values before 2006 are in old manat (AZM) and are converted at 5000 AZM = 1 AZN."""
+    root = ET.fromstring(xml)
+    date = pd.to_datetime(root.get("Date"), format="%d.%m.%Y")
+    for v in root.iter("Valute"):
+        if v.get("Code") == "USD":
+            val = float(v.findtext("Value")) / float(v.findtext("Nominal") or 1)
+            return date, val / AZM_PER_AZN if date < pd.Timestamp("2006-01-01") else val
+    return None
+
+
+def fetch_azn(start: str = "2000-01-01", end: str | None = None, have: pd.Series | None = None,
+              workers: int = 6) -> pd.Series:
+    """AZN per USD, daily official rate of cbar.az (one XML per business day); only the days
+    missing from ``have`` (an earlier download) are requested."""
+    from concurrent.futures import ThreadPoolExecutor
+    have = have.dropna() if have is not None else pd.Series(dtype=float)
+    days = pd.bdate_range(start, end or pd.Timestamp.today().normalize() - pd.Timedelta(days=1))
+    days = days[~days.isin(have.index)] if len(have) else days
+
+    def one(d):
+        try:
+            return parse_cbar(_get(CBAR_URL.format(date=d)))
+        except (OSError, ValueError, ET.ParseError):
+            return None
+    with ThreadPoolExecutor(workers) as ex:
+        got = [r for r in ex.map(one, days) if r]
+    new = pd.Series(dict(got), dtype=float)
+    s = pd.concat([have, new]).groupby(level=0).last().sort_index().rename("AZN")
+    s.index.name = "Date"
+    return s
+
+
+def fetch_clp(start: int = 2000, end: int | None = None) -> pd.Series:
+    """CLP per USD, "dólar observado" of the Banco Central de Chile, via the mindicador.cl API
+    (one request per year; the BCCh's own API needs a registered account)."""
+    out = {}
+    for y in range(start, (end or pd.Timestamp.today().year) + 1):
+        try:
+            for r in json.loads(_get(CLP_URL.format(year=y), timeout=60)).get("serie", []):
+                out[pd.Timestamp(r["fecha"][:10])] = float(r["valor"])
+        except (OSError, ValueError) as exc:
+            print(f"  CLP {y}: {exc}")
+    return pd.Series(out, name="CLP", dtype=float).sort_index()
+
+
+def fetch_fx_panel(cache: Path | None = None, start: str = "2000-01-01") -> pd.DataFrame:
+    """Daily rates of commodity currencies, units per 1 USD: NOK, BRL (FRED H.10 DEXNOUS, DEXBZUS),
+    RUB (cross rate of the official NBK rates in data/fx_rates.csv: USD/KZT ÷ RUB/KZT; cbr.ru does
+    not answer from here), AZN (cbar.az), CLP (BCCh via mindicador.cl); data/fx_commodity_panel.csv."""
+    out = data_dir()
+    cols = {"NOK": fetch_fred("DEXNOUS", start), "BRL": fetch_fred("DEXBZUS", start)}
+    fx = out / "fx_rates.csv"
+    if fx.exists():
+        r = pd.read_csv(fx, index_col=0, parse_dates=True)
+        cols["RUB"] = (r["USD"] / r["RUB"]).loc[start:].round(4).rename("RUB")
+    path = cache or out / "fx_commodity_panel.csv"
+    prev = pd.read_csv(path, index_col=0, parse_dates=True) if path.exists() else pd.DataFrame()
+    cols["AZN"] = fetch_azn(start, have=prev.get("AZN"))
+    cols["CLP"] = fetch_clp(pd.Timestamp(start).year)
+    df = pd.DataFrame(cols).sort_index()
+    df.index.name = "Date"
+    df.to_csv(path)
+    return df
 
 
 def fetch_yahoo(tickers, start: str = "2020-01-01", end: str | None = None) -> pd.DataFrame:
