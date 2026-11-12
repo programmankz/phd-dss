@@ -88,10 +88,18 @@ def _solve(obj, n, w_max, groups, U, cap) -> tuple[np.ndarray, bool]:
     return w / w.sum(), bool(ok)
 
 
-def max_signal_to_risk(s, cov, w_max=1.0, groups=None, U=None, cluster_cap=None, return_ok=False):
-    """Weights maximising w's / sqrt(w'Sigma w); with ``return_ok`` also whether SLSQP converged."""
+def max_signal_to_risk(s, cov, w_max=1.0, groups=None, U=None, cluster_cap=None, return_ok=False,
+                       w_prev=None, kappa: float = 0.0):
+    """Weights maximising w's / sqrt(w'Sigma w) - kappa ||w - w_prev||_1; with ``return_ok`` also
+    whether SLSQP converged. The L1 norm is smoothed (sqrt(x^2 + 1e-10)) for SLSQP; kappa = 0 or
+    ``w_prev`` = None gives the objective of [A4]."""
     s, cov = np.asarray(s, float), np.asarray(cov, float)
-    obj = lambda w: -(w @ s) / np.sqrt(max(w @ cov @ w, 1e-12))
+    if kappa > 0 and w_prev is not None:
+        wp = np.asarray(w_prev, float)
+        obj = lambda w: (-(w @ s) / np.sqrt(max(w @ cov @ w, 1e-12))          # noqa: E731
+                         + kappa * np.sqrt((w - wp) ** 2 + 1e-10).sum())
+    else:
+        obj = lambda w: -(w @ s) / np.sqrt(max(w @ cov @ w, 1e-12))            # noqa: E731
     w, ok = _solve(obj, len(s), w_max, groups, U, cluster_cap)
     return (w, ok) if return_ok else w
 
