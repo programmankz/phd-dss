@@ -131,3 +131,23 @@ def shapley_table(daily: pd.DataFrame, rf: pd.Series, windows: dict | None = Non
     out = pd.DataFrame(rows)
     out.attrs |= {"n_days": len(daily), "n_boot": n_boot, "block": significance.block_length(len(daily))}
     return out
+
+
+def paired_difference_test(a: pd.Series, b: pd.Series, metric, null: float = 0.0, n_boot: int = significance.N_BOOT,
+                           seed: int | None = None, level: float = 0.95) -> dict:
+    """Paired circular block bootstrap of metric(a) - metric(b) for two daily return series.
+
+    ``metric`` maps an array (n_boot x n or n) of daily returns to values along the last axis.
+    Returns the difference, its percentile interval and the shift-method p-values: two-sided for
+    H0: difference = ``null`` and one-sided for H1: difference > ``null``."""
+    both = pd.concat([a, b], axis=1).dropna()
+    x, y = both.iloc[:, 0].to_numpy(), both.iloc[:, 1].to_numpy()
+    idx = significance.block_bootstrap_indices(len(both), n_boot, seed=seed if seed is not None
+                                               else significance.config.RANDOM_SEED)
+    diff = float(metric(x) - metric(y))
+    bd = metric(x[idx]) - metric(y[idx])
+    centred = bd - diff + null
+    q = (1 - level) / 2
+    return {"diff": diff, "low": float(np.nanquantile(bd, q)), "high": float(np.nanquantile(bd, 1 - q)),
+            "p_two_sided": float(np.nanmean(np.abs(centred - null) >= abs(diff - null))),
+            "p_greater": float(np.nanmean(centred >= diff)), "n_days": len(both)}

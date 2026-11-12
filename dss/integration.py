@@ -84,7 +84,10 @@ def fx_hedge(fx_risk: float, rules: config.IntegrationRules = config.RULES) -> f
 
 
 def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.Settings,
-           sectors: pd.Series | None = None, rules: config.IntegrationRules = config.RULES) -> Decision:
+           sectors: pd.Series | None = None, rules: config.IntegrationRules = config.RULES,
+           derived: dict | None = None) -> Decision:
+    """One decision. With ``derived`` (keys moments, r_kzt, m, cov_e_delta, var_delta, gamma; see
+    :func:`dss.pipeline.derived_inputs`) the risky share and the hedge follow the derived rules d*, h*."""
     profile = config.PROFILES[settings.profile]
     sc = settings.scenario
     growth = macro.scenario_path(sc)
@@ -93,6 +96,17 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
 
     # ---- Module I -> risk budget
     risky, trail = risk_budget(profile, macro.recession_prob, sc, macro.phase, g_next, rules)
+    if derived is not None and derived.get("moments") is not None:
+        mom, g = derived["moments"], derived["gamma"]
+        mu, var = mixture_moments(macro.recession_prob, mom)
+        risky = derived_risk_budget(macro.recession_prob, mom, derived["r_kzt"], g, profile)
+        trail = [f"выведенное правило: d* = clip((μ(π) − r_KZT) / (γ·σ²(π))), γ = {num(g, 3)}",
+                 f"μ(π) = {pct(mu, 1)} (рост {pct(mom.mu_n, 1)}, неблагоприятный режим {pct(mom.mu_r, 1)}), "
+                 f"σ(π) = {pct(np.sqrt(var), 1)}, r_KZT = {pct(derived['r_kzt'], 1)}",
+                 "фаза цикла и сценарий не используются"]
+    elif derived is not None:
+        warns.append("Выведенные правила: недостаточно истории для оценки режимов, использованы экспертные правила.")
+        derived = None
     steps.append({"module": "I", "title": "Макропрогноз → бюджет риска",
                   "facts": [f"P(рецессии в {growth.index[0]} г.) = {pct(macro.recession_prob, 0)} (Gradient Boosting)",
                             f"прогноз роста ВВП {growth.index[0]} г. = {num(g_next, 2)}% (ARIMA{macro.extra['arima_order']}, сценарий {config.SCENARIOS[sc]['label']})",
@@ -101,11 +115,17 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
 
     # ---- Module II -> safe part and FX hedge
     usd = fx_hedge(fx.fx_risk, rules)
+    fx_trail = []
+    if derived is not None:
+        usd = derived_fx_hedge(risky, derived["m"], derived["cov_e_delta"], derived["var_delta"], derived["gamma"],
+                               rules.hedge_max)
+        fx_trail = [f"выведенное правило: h* = clip((m/γ − d·Cov(R_E, δ)) / ((1 − d)·σ²_δ)), "
+                    f"m = r_USD + E[δ] − r_KZT = {pct(derived['m'], 1)}, σ_δ = {pct(np.sqrt(derived['var_delta']), 1)}"]
     steps.append({"module": "II", "title": "Валютный риск → хедж безрисковой части",
                   "facts": [f"индекс валютного риска = {num(fx.fx_risk, 2)} (режим: {fx.regime.lower()})",
                             f"ожидаемое ослабление тенге к USD ≈ {pct(fx.exp_depreciation, 1)} в год",
                             f"USD, EUR, CNY — один фактор: PC1 объясняет {pct(fx.pc1_share, 0)} дисперсии"],
-                  "result": f"в USD-инструментах {pct(usd, 0)} безрисковой части", "trail": []})
+                  "result": f"в USD-инструментах {pct(usd, 0)} безрисковой части", "trail": fx_trail})
     if fx.fx_risk >= rules.fx_risk_warn:
         warns.append("Высокий валютный риск: рассмотрите увеличение валютного хеджа сверх модельного.")
 
