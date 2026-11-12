@@ -150,8 +150,26 @@ def max_drawdown(curve: pd.Series) -> float:
     return float((curve / curve.cummax() - 1).min())
 
 
-def asset_features(prices: pd.DataFrame, fundamentals: pd.DataFrame | None = None) -> pd.DataFrame:
-    """Price-behaviour, technical and (if available) valuation features per asset."""
+def liquidity_features(prices: pd.DataFrame, volumes: pd.DataFrame) -> pd.DataFrame:
+    """Liquidity of every asset over the window of ``prices``:
+
+    * zero_ret_share - share of days with a zero price change (Lesmond, Ogden and Trzcinka, 1999);
+    * log_amihud     - log of the Amihud (2002) illiquidity mean(|r_t| / turnover_t) x 1e9 over the
+                       days with trades (turnover in tenge, data/volumes_kase.csv)."""
+    r = prices.pct_change().iloc[1:]
+    v = volumes.reindex(index=r.index, columns=prices.columns)
+    out = pd.DataFrame(index=prices.columns)
+    out["zero_ret_share"] = (r.abs() < 1e-12).mean()
+    traded = v.where(v > 0)
+    illiq = (r.abs() / traded * 1e9).mean()
+    out["log_amihud"] = np.log(illiq.clip(lower=1e-12))
+    return out
+
+
+def asset_features(prices: pd.DataFrame, fundamentals: pd.DataFrame | None = None,
+                   volumes: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Price-behaviour, technical, (if available) valuation and (if ``volumes`` is given) liquidity
+    features per asset."""
     r = np.log(prices).diff().dropna()
     mkt = r.mean(axis=1)
     feats = pd.DataFrame(index=prices.columns)
@@ -165,6 +183,8 @@ def asset_features(prices: pd.DataFrame, fundamentals: pd.DataFrame | None = Non
         for col in ("PB", "PE"):
             if col in fundamentals.columns:
                 feats[col] = fundamentals[col].reindex(prices.columns)
+    if volumes is not None:
+        feats = feats.join(liquidity_features(prices, volumes))
     return feats.dropna(axis=1, how="any")
 
 
@@ -210,8 +230,9 @@ def dissimilarity(X: np.ndarray, returns: pd.DataFrame, kind: str = "features") 
 
 
 def cluster_assets(prices: pd.DataFrame, fundamentals: pd.DataFrame | None = None,
-                   k: int | None = None, m: float = 2.0, distance: str = "features") -> ClusterResult:
-    feats = asset_features(prices, fundamentals)
+                   k: int | None = None, m: float = 2.0, distance: str = "features",
+                   volumes: pd.DataFrame | None = None) -> ClusterResult:
+    feats = asset_features(prices, fundamentals, volumes)
     X = StandardScaler().fit_transform(feats)            # equal influence of features
     r = np.log(prices).diff().dropna()
     D = dissimilarity(X, r, distance)
