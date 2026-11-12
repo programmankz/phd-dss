@@ -139,3 +139,26 @@ def forecast_tests(predictions: dict, prices: pd.DataFrame, labels: dict | None 
                      "mse_naive": float(loss_0.mean()), "dm": dm, "p_value": p, "verdict": verdict,
                      "n_days": int(loss_m.notna().sum())})
     return pd.DataFrame(rows).set_index("model")
+
+
+def deflated_sharpe(daily_excess, n_trials: int, sr_trials=None) -> tuple[float, float]:
+    """Deflated Sharpe ratio (Bailey and Lopez de Prado, 2014) of daily excess returns.
+
+    Probability that the true (daily, non-annualised) Sharpe ratio exceeds the maximum expected
+    among ``n_trials`` unskilled strategies, SR0 = sd(SR_trials) * ((1 - g) z(1 - 1/N) + g z(1 - 1/(N e))),
+    g = Euler-Mascheroni constant, with the skewness and kurtosis correction of the standard error.
+    ``sr_trials`` are the daily Sharpe ratios of all trials (their spread sets SR0); returns
+    (DSR, SR0 annualised)."""
+    r = np.asarray(daily_excess, float)
+    r = r[np.isfinite(r)]
+    n = len(r)
+    sr = r.mean() / r.std(ddof=1)
+    skew, kurt = stats.skew(r), stats.kurtosis(r, fisher=False)
+    if n_trials > 1 and sr_trials is not None and len(sr_trials) > 1:
+        g = 0.5772156649
+        v = np.std(np.asarray(sr_trials, float), ddof=1)
+        sr0 = v * ((1 - g) * stats.norm.ppf(1 - 1 / n_trials) + g * stats.norm.ppf(1 - 1 / (n_trials * np.e)))
+    else:
+        sr0 = 0.0
+    se = np.sqrt((1 - skew * sr + (kurt - 1) / 4 * sr ** 2) / (n - 1))
+    return float(stats.norm.cdf((sr - sr0) / se)), float(sr0 * np.sqrt(252))
