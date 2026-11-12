@@ -334,3 +334,55 @@ def test_kase_history_keeps_turnover_and_drops_todays_bar():
         loaders._get = real_get
     assert out["close"]["A"].tolist() == [10.0, 11.0]
     assert out["volume"]["A"].tolist() == [1e6, 2e6]
+
+
+def test_kase_ex_date_for_shares_that_never_switched_to_t2():
+    cal = pd.bdate_range("2025-05-19", "2025-05-30")
+    # KZTKp: record Sun 25.05.2025, T+0 -> first trading day on or after it, Mon 26.05
+    assert loaders.kase_ex_date(pd.Timestamp("2025-05-25"), cal, None) == pd.Timestamp("2025-05-26")
+    assert loaders.kase_ex_date(pd.Timestamp("2025-05-25"), cal) == pd.Timestamp("2025-05-22")
+
+
+def test_kase_history_fill_modes():
+    import json
+    day = 86400 * 19000
+
+    def fake_get(url, timeout=30):
+        t = [day, day + 86400 * 2] if "symbol=A" in url else [day, day + 86400, day + 86400 * 3]
+        return json.dumps({"s": "ok", "t": t, "c": [10.0 + i for i in range(len(t))], "v": [1.0] * len(t)}).encode()
+
+    real_get, loaders._get = loaders._get, fake_get
+    try:
+        inside = loaders.fetch_kase_history(["A", "B"], start="2022-01-01", fill="inside")["close"]
+        none = loaders.fetch_kase_history(["A", "B"], start="2022-01-01", fill="none")["close"]
+    finally:
+        loaders._get = real_get
+    assert inside["A"].tolist()[:3] == [10.0, 10.0, 11.0] and np.isnan(inside["A"].iloc[3])  # delisted: no tail
+    assert np.isnan(none["A"].iloc[1]) and none["B"].notna().sum() == 3
+
+
+def test_kase_archive_sheet_is_parsed_day_first_and_sorted():
+    raw = pd.DataFrame([["Индекс KASE 2008-01-01 - 2008-01-09", None, None],
+                        ["Дата", "Закрытие", "Объем, млн KZT"],
+                        ["09.01.08", "2624,95", 194.55],
+                        ["03.01.2008", 2640.15, 141.19],
+                        ["04.01.08", 2600.12, "1 136,2"]])
+    df = loaders.parse_kase_archive(raw)
+    assert list(df.index.strftime("%Y-%m-%d")) == ["2008-01-03", "2008-01-04", "2008-01-09"]
+    assert df["Закрытие"].tolist() == [2640.15, 2600.12, 2624.95] and df["Объем, млн KZT"].iloc[1] == 1136.2
+
+
+def test_kase_bond_passport_is_read_by_label():
+    j = {"848": {"label": "ISIN", "value": "XS1120709826"},
+         "1": {"label": "Валюта выпуска и обслуживания", "value": "USD"},
+         "2": {"label": "Номинальная стоимость в валюте выпуска",
+               "value": "1,00 (минимальный размер долга в номинальном выражении)"},
+         "3": {"label": "Текущая купонная ставка, % годовых", "value": "4,875"},
+         "4": {"label": "Дата начала обращения", "value": "14.10.14"},
+         "5": {"label": "Срок обращения, дней", "value": "10 800"},
+         "market_makers": {"label": "Маркет-мейкеры", "value": "отсутствует"}}
+    row = loaders.parse_kase_characteristics(j, "KZ_06_4410")
+    assert row["isin"] == "XS1120709826" and row["currency"] == "USD" and row["nominal"] == 1.0
+    assert row["coupon_pct"] == 4.875 and row["start_date"] == "2014-10-14" and row["maturity"] == "2044-10-14"
+    j["6"] = {"label": "Дата погашения", "value": "25.03.15"}
+    assert loaders.parse_kase_characteristics(j, "X")["maturity"] == "2015-03-25"

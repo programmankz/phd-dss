@@ -418,11 +418,14 @@ def fetch_gdp(last_year: int = 2024) -> tuple[pd.DataFrame, str]:
         return fetch_worldbank_gdp(last_year=last_year), "World Bank WDI (NY.GDP.MKTP.KD.ZG)"
 
 
-def fetch_kase_history(tickers=None, start: str = "2019-01-01", end: str | None = None) -> dict[str, pd.DataFrame]:
+def fetch_kase_history(tickers=None, start: str = "2019-01-01", end: str | None = None,
+                       fill: str = "all") -> dict[str, pd.DataFrame]:
     """Daily bars from the kase.kz chart feed (TradingView UDF): {"close": KZT, "volume": turnover
     in KZT (field ``v``; equals ``volume_kzt`` of /api/instruments/trade-info)}. Closes are
     unadjusted for dividends and forward-filled over days without trades; volumes are left NaN
-    on those days. Today's unfinished intraday bar is dropped."""
+    on those days. Today's unfinished intraday bar is dropped. ``fill="inside"`` forward-fills
+    only between a security's first and last bar (delisted shares stay empty afterwards);
+    ``fill="none"`` keeps NaN on days without trades (bonds)."""
     today = pd.Timestamp.today().normalize()
     t0 = int(pd.Timestamp(start).timestamp())
     t1 = int((pd.Timestamp(end) if end else today + pd.Timedelta(days=1)).timestamp())
@@ -438,7 +441,7 @@ def fetch_kase_history(tickers=None, start: str = "2019-01-01", end: str | None 
             print(f"  {t}: нет данных на kase.kz — пропущен")
             continue
         idx = pd.to_datetime(j["t"], unit="s").normalize()
-        keep = idx < today
+        keep = (idx < today) & ~idx.duplicated(keep="last")   # one bar per day (rare duplicate stamps)
         close[t] = pd.Series(j["c"], index=idx, dtype=float)[keep]
         if "v" in j:
             volume[t] = pd.Series(j["v"], index=idx, dtype=float)[keep]
@@ -447,7 +450,11 @@ def fetch_kase_history(tickers=None, start: str = "2019-01-01", end: str | None 
     px = pd.DataFrame(close).sort_index()
     px.index.name = "Date"
     vol = pd.DataFrame(volume).reindex(px.index)
-    return {"close": px.ffill(), "volume": vol}
+    if fill == "all":
+        px = px.ffill()
+    elif fill == "inside":
+        px = px.ffill(limit_area="inside")
+    return {"close": px, "volume": vol}
 
 
 def fetch_kase(tickers=None, start: str = "2019-01-01", end: str | None = None) -> pd.DataFrame:
@@ -455,24 +462,145 @@ def fetch_kase(tickers=None, start: str = "2019-01-01", end: str | None = None) 
     return fetch_kase_history(tickers, start, end)["close"]
 
 
+# Liquid KASE shares of 2008-2015 that are delisted or outside the main set (data/prices_kase_extra.csv):
+# >= ~500 trading days in 2008-2015 in the chart feed.
+KASE_EXTRA_TICKERS = ["GB_KZMS", "RDGZ", "RDGZp", "KKGB", "KKGBp", "BTAS", "KZTKp", "GB_ENRC"]
+KASE_INDEX_URL = "https://kase.kz/api/indicators/index-kase/archive-xls?start_date={start}&end_date={end}&language=ru"
+# Bond indices published by KASE: archive path -> columns kept (GSec indices KZGB since 03.2022,
+# corporate bond indices KASE_BMY / KASE_BMC since 09.2017).
+KASE_BOND_INDICES = {"kzgb/archive-xls/Y": None, "kzgb/archive-xls/CP": None, "kzgb/archive-xls/DP": None,
+                     "kase-b/KASE_BMY/archive-xls": None, "kase-b/KASE_BMC/archive-xls": None}
+# Bonds with the longest daily history in the chart feed (KASE's secondary bond market is thin:
+# a few hundred trading days per issue at best). MEUKAM (KZT GSec), sovereign USD Eurobonds,
+# KZT and USD corporates.
+KASE_BONDS = ["MUM120_0001", "MUM180_0001", "MUM240_0001", "MUM120_0017", "MUM180_0011", "MUM168_0003",
+              "KZ_05_2410", "KZ_06_4410", "HSBKb10", "KKGBb4", "KEGCb3", "KMGZe11"]
+# passport labels of /api/instruments/{gsecs|bonds}/<code>/characteristics (keys differ by issue)
+KASE_BOND_FIELDS = {"ISIN": "isin", "Валюта выпуска и обслуживания": "currency",
+                    "Номинальная стоимость в валюте выпуска": "nominal", "Текущая купонная ставка, % годовых": "coupon_pct",
+                    "Вид купонной ставки": "coupon_type", "Дата начала обращения": "start_date",
+                    "Дата погашения": "maturity_date", "Период погашения": "redemption", "Срок обращения, дней": "term_days",
+                    "Наименование облигации": "kind", "Расчетный базис (дней в месяце / дней в году)": "day_count"}
+
+
+def _excel(data: bytes) -> pd.DataFrame:
+    import io
+    try:
+        return pd.read_excel(io.BytesIO(data), header=None)
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("для архивов KASE в формате xlsx нужен openpyxl: pip install openpyxl") from exc
+
+
+def parse_kase_archive(raw: pd.DataFrame) -> pd.DataFrame:
+    """KASE indicator archive sheet (row 0: title, row 1: header, then one row per day, dates
+    DD.MM.YY or DD.MM.YYYY, any order) -> numeric frame indexed by Date, ascending."""
+    head = [str(c).strip() for c in raw.iloc[1]]
+    df = raw.iloc[2:].copy()
+    df.columns = head
+    s = df[head[0]].astype(str).str.strip()
+    dates = pd.to_datetime(s, format="%d.%m.%y", errors="coerce").fillna(
+        pd.to_datetime(s, format="%d.%m.%Y", errors="coerce"))
+    df = df.drop(columns=head[0]).set_index(pd.DatetimeIndex(dates, name="Date"))
+    df = df[df.index.notna()].apply(lambda c: pd.to_numeric(c.astype(str).str.replace(",", ".").str.replace(" ", ""),
+                                                            errors="coerce"))
+    return df[~df.index.duplicated()].sort_index()
+
+
+INDEX_COLUMNS = {"Открытие": "open", "Максимум": "high", "Минимум": "low", "Закрытие": "close",
+                 "Объем, млн KZT": "volume_mln_kzt", "Объем, тыс USD": "volume_thousand_usd"}
+
+
+def fetch_kase_index(start: str = "2008-01-01", end: str | None = None, cache: Path | None = None) -> pd.DataFrame:
+    """Daily KASE index (open/high/low/close, turnover) from the exchange's archive download;
+    writes data/index_kase.csv."""
+    end = end or (pd.Timestamp.today().normalize() - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    df = parse_kase_archive(_excel(_get(KASE_INDEX_URL.format(start=start, end=end), timeout=120)))
+    df = df.rename(columns=INDEX_COLUMNS)[list(INDEX_COLUMNS.values())]
+    (cache or data_dir() / "index_kase.csv").parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(cache or data_dir() / "index_kase.csv")
+    return df
+
+
+def fetch_kase_bond_indices(start: str = "2008-01-01", end: str | None = None, cache: Path | None = None) -> pd.DataFrame:
+    """KASE bond indices (KZGB_* GSec yield / clean / dirty price, KASE_BMY yield and KASE_BMC
+    clean price of corporates); writes data/bond_indices_kase.csv."""
+    end = end or (pd.Timestamp.today().normalize() - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    frames = []
+    for path in KASE_BOND_INDICES:
+        url = f"https://kase.kz/api/indicators/{path}?start_date={start}&end_date={end}&language=ru"
+        frames.append(parse_kase_archive(_excel(_get(url, timeout=120))))
+    df = pd.concat(frames, axis=1).sort_index()
+    df.to_csv(cache or data_dir() / "bond_indices_kase.csv")
+    return df
+
+
+def parse_kase_characteristics(j: dict, code: str) -> dict:
+    """Bond passport from /api/instruments/{gsecs|bonds}/<code>/characteristics (matched by label)."""
+    import re
+    by_label = {str(v.get("label", "")).strip(): v.get("value") for v in j.values() if isinstance(v, dict)}
+    out = {"code": code}
+    for label, name in KASE_BOND_FIELDS.items():
+        v = re.sub(r"<[^>]+>|&[a-z]+;", " ", str(by_label.get(label) or "")).strip()
+        out[name] = re.sub(r"\s+", " ", v) or None
+    for name in ("nominal", "coupon_pct", "term_days"):
+        num = re.match(r"[\d\s\xa0]+(?:,\d+)?", out[name] or "")       # "1 000,00", "1,00 (minimum ...)"
+        out[name] = float(re.sub(r"[\s\xa0]", "", num.group(0)).replace(",", ".")) if num else None
+    start = pd.to_datetime(out["start_date"], format="%d.%m.%y", errors="coerce") if out["start_date"] else pd.NaT
+    out["start_date"] = None if pd.isna(start) else f"{start:%Y-%m-%d}"
+    mat = pd.to_datetime((out.pop("maturity_date") or out["redemption"] or "")[:8], format="%d.%m.%y", errors="coerce")
+    if pd.isna(mat) and out["term_days"] and not pd.isna(start):   # 30/360: years = days / 360
+        mat = start + pd.DateOffset(months=round(out["term_days"] / 30))
+    out["maturity"] = None if pd.isna(mat) else f"{mat:%Y-%m-%d}"
+    return out
+
+
+def fetch_kase_bonds(codes=None, start: str = "2008-01-01", cache: Path | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Daily dirty prices of KASE bonds (chart feed, currency of the bond per one bond; NaN on
+    days without trades) and their passports; writes data/bonds_kase.csv and bonds_kase_meta.csv."""
+    codes = codes or KASE_BONDS
+    px = fetch_kase_history(codes, start=start, fill="none")["close"]
+    meta = []
+    for c in px.columns:
+        j = None
+        for kind in ("gsecs", "bonds"):
+            try:
+                j = json.loads(_get(f"https://kase.kz/api/instruments/{kind}/{c}/characteristics"))
+                if any(isinstance(v, dict) and v.get("label") == "ISIN" for v in j.values()) or "detail" not in j:
+                    break
+            except (OSError, ValueError):
+                j = None
+        row = parse_kase_characteristics(j or {}, c)
+        row |= {"first_trade": f"{px[c].first_valid_index():%Y-%m-%d}", "last_trade": f"{px[c].last_valid_index():%Y-%m-%d}",
+                "trading_days": int(px[c].notna().sum())}
+        meta.append(row)
+    out = data_dir() if cache is None else cache
+    px.dropna(how="all").to_csv(out / "bonds_kase.csv")
+    meta = pd.DataFrame(meta)
+    meta.to_csv(out / "bonds_kase_meta.csv", index=False)
+    return px, meta
+
+
 # Dates from which KASE share deals settle T+2 only (Board decisions, KASE news 1279747,
 # 1280974, 1282194). Before them deals settled T+0. Shares listed later trade T+2 from listing.
 KASE_T2_FROM = {"KCEL": "2015-11-25", "RDGZ": "2015-11-25", "HSBK": "2015-12-09", "KZTK": "2015-12-09",
-                "CCBN": "2015-12-09", "GB_KZMS": "2015-12-09", "KEGC": "2015-12-23", "KZTO": "2015-12-23"}
+                "CCBN": "2015-12-09", "GB_KZMS": "2015-12-09", "KEGC": "2015-12-23", "KZTO": "2015-12-23",
+                # never switched: the instrument passport on kase.kz gives "Схема расчетов: T+0"
+                "KZTKp": None, "RDGZp": None, "KKGB": None, "KKGBp": None}
 KASE_T2_DEFAULT = "2015-12-23"
 KASE_DIVIDENDS_URL = "https://kase.kz/api/instruments/shares/{ticker}/dividends"
 
 
-def kase_ex_date(record: pd.Timestamp, calendar: pd.DatetimeIndex, t2_from: str = KASE_T2_DEFAULT) -> pd.Timestamp:
+def kase_ex_date(record: pd.Timestamp, calendar: pd.DatetimeIndex, t2_from: str | None = KASE_T2_DEFAULT) -> pd.Timestamp:
     """First trading day without the right to the dividend. The shareholder register is fixed
     as of 00:00 of the record date R, so a deal must settle on a trading day strictly before R:
     with T+0 the ex-date is the first trading day >= R, with T+2 it is one trading day before
-    the last trading day < R (the deal of the day before that settles on it)."""
+    the last trading day < R (the deal of the day before that settles on it). ``t2_from=None``:
+    the share always settles T+0."""
     record = pd.Timestamp(record)
     last = int(calendar.searchsorted(record, side="left")) - 1      # last trading day < R
     if last < 1:
         raise ValueError(f"record date {record:%Y-%m-%d} is before the calendar")
-    t2 = calendar[last - 1] >= pd.Timestamp(t2_from)
+    t2 = t2_from is not None and calendar[last - 1] >= pd.Timestamp(t2_from)
     if t2:
         return calendar[last - 1]
     if last + 1 >= len(calendar):

@@ -1,4 +1,10 @@
 ticker,ex_date,method,factor,note
+HSBK,2008-05-19,dividend,2.75,KASE record date 2008-05-19 (register as of 00:00); T+0 settlement -> ex-date 2008-05-19; KZT 2.75 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
+HSBK,2012-12-17,factor,0.1,"1:10 split of common shares decided by the EGM of 06.12.2012, effective after the close of KASE trading on 14.12.2012 (next KASE session 19.12.2012); earlier prices x 0.1; sources: https://kase.kz/en/news/show/1184541 , Halyk RNS 17.12.2012 'Results of the split of common shares'"
+HSBK,2013-05-16,dividend,1.12,KASE record date 2013-05-16 (register as of 00:00); T+0 settlement -> ex-date 2013-05-16; KZT 1.12 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
+HSBK,2014-05-04,dividend,1.7,KASE record date 2014-05-01 (register as of 00:00); T+0 settlement -> ex-date 2014-05-04; KZT 1.7 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
+HSBK,2015-05-04,dividend,3.14,KASE record date 2015-05-01 (register as of 00:00); T+0 settlement -> ex-date 2015-05-04; KZT 3.14 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
+HSBK,2018-04-19,dividend,6.31,KASE record date 2018-04-23 (register as of 00:00); T+2 settlement -> ex-date 2018-04-19; KZT 6.31 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
 HSBK,2019-04-18,dividend,10.78,KASE record date 2019-04-22 (register as of 00:00); T+2 settlement -> ex-date 2019-04-18; KZT 10.78 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
 HSBK,2020-07-21,dividend,17.08,KASE record date 2020-07-23 (register as of 00:00); T+2 settlement -> ex-date 2020-07-21; KZT 17.08 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
 HSBK,2021-04-22,dividend,18.0,KASE record date 2021-04-26 (register as of 00:00); T+2 settlement -> ex-date 2021-04-22; KZT 18 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
@@ -10,9 +16,22 @@ HSBK,2025-04-30,dividend,29.64,KASE record date 2025-05-05 (register as of 00:00
 HSBK,2025-09-19,dividend,21.0,KASE record date 2025-09-23 (register as of 00:00); T+2 settlement -> ex-date 2025-09-19; KZT 21 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
 HSBK,2026-04-28,dividend,30.1,KASE record date 2026-04-30 (register as of 00:00); T+2 settlement -> ex-date 2026-04-28; KZT 30.1 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
 HSBK,2026-08-24,dividend,28.09,KASE record date 2026-08-26 (register as of 00:00); T+2 settlement -> ex-date 2026-08-24; KZT 28.09 per share; source https://kase.kz/api/instruments/shares/HSBK/dividends
+KCEL,2013-06-10,dividend,162.01,KASE record date 2013-06-10 (register as of 00:00); T+0 settlement -> ex-date 2013-06-10; KZT 162.01 per share; source https://kase.kz/api/instruments/shares/KCEL/dividends
+KCEL,2014-06-09,dividend,316.95,KASE record date 2014-06-07 (register as of 00:00); T+0 settlement -> ex-date 2014-06-09; KZT 316.95 per share; source https://kase.kz/api/instruments/shares/KCEL/dividends
+KCEL,2015-04-20,dividend,291.3,KASE record date 2015-04-20 (register as of 00:00); T+0 settlement -> ex-date 2015-04-20; KZT 291.3 per share; source https://kase.kz/api/instruments/shares/KCEL/dividends
+KCEL,2016-05-17,dividend,116.58,KASE record date 2016-05-19 (register as of 00:00); T+2 settlement -> ex-date 2016-05-17; KZT 116.58 per share; source https://kase.kz/api/instruments/shares/KCEL/dividends
+KCEL,2017-05-23,dividend,58.39,KASE record date 2017-05-25 (register as of 00:00); T+2 settlement -> ex-date 2017-05-23; KZT 58.39 per share; source https://kase.kz/api/instruments/shares/KCEL/dividends
+KCEL,2018-05-29,dividend,58.39,KASE record date 2018-05-31 (register as of 00:00); T+2 settlement -> ex-date 2018-05-29; KZT 58.39 per share; source https://kase.kz/api/instruments/shares/KCEL/dividends
 KCEL,2019-05-30,dividend,29.86,KASE record date 2019-06-02 (register as of 00:00); T+2 settlement -> ex-date 2019-05-30; KZT 29.86 per share; source https://kase.kz/api/instruments/shares/KCEL/dividends
 KCEL,2020-05-28,dividend,45.0,KASE record date 2020-05-31 (register as of 00:00); T+2 settlement -> ex-date 2020-05-28; KZT 45 per share; source https://kase.kz/api/instruments/shares/KCEL/dividends
 KCEL,2021-05-21,dividend,87.89,KASE record date 2021-05-25 (register as of 00:00); T+2 settlement -> ex-date 2021-05-21; KZT 87.89 per share; source https://kase.kz/api/instruments/shares/KCEL/dividends
+KEGC,2015-05-15,dividend,33.13,KASE record date 2015-05-15 (register as of 00:00); T+0 settlement -> ex-date 2015-05-15; KZT 33.13 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
+KEGC,2015-10-30,dividend,18.8,KASE record date 2015-10-30 (register as of 00:00); T+0 settlement -> ex-date 2015-10-30; KZT 18.8 per share (9.4 + 9.4); source https://kase.kz/api/instruments/shares/KEGC/dividends
+KEGC,2016-11-10,dividend,24.93,KASE record date 2016-11-13 (register as of 00:00); T+2 settlement -> ex-date 2016-11-10; KZT 24.93 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
+KEGC,2017-05-18,dividend,28.13,KASE record date 2017-05-22 (register as of 00:00); T+2 settlement -> ex-date 2017-05-18; KZT 28.13 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
+KEGC,2017-11-02,dividend,48.4,KASE record date 2017-11-06 (register as of 00:00); T+2 settlement -> ex-date 2017-11-02; KZT 48.4 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
+KEGC,2018-05-10,dividend,40.13,KASE record date 2018-05-14 (register as of 00:00); T+2 settlement -> ex-date 2018-05-10; KZT 40.13 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
+KEGC,2018-12-07,dividend,80.53,KASE record date 2018-12-11 (register as of 00:00); T+2 settlement -> ex-date 2018-12-07; KZT 80.53 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
 KEGC,2019-05-08,dividend,54.53,KASE record date 2019-05-14 (register as of 00:00); T+2 settlement -> ex-date 2019-05-08; KZT 54.53 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
 KEGC,2019-10-31,dividend,67.17,KASE record date 2019-11-04 (register as of 00:00); T+2 settlement -> ex-date 2019-10-31; KZT 67.17 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
 KEGC,2020-06-04,dividend,48.86,KASE record date 2020-06-08 (register as of 00:00); T+2 settlement -> ex-date 2020-06-04; KZT 48.86 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
@@ -28,10 +47,21 @@ KEGC,2024-10-23,dividend,82.4,KASE record date 2024-10-28 (register as of 00:00)
 KEGC,2025-05-26,dividend,81.0,KASE record date 2025-05-28 (register as of 00:00); T+2 settlement -> ex-date 2025-05-26; KZT 81 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
 KEGC,2025-10-23,dividend,80.9,KASE record date 2025-10-28 (register as of 00:00); T+2 settlement -> ex-date 2025-10-23; KZT 80.9 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
 KEGC,2026-05-06,dividend,81.0,KASE record date 2026-05-12 (register as of 00:00); T+2 settlement -> ex-date 2026-05-06; KZT 81 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
+KEGC,2026-10-12,dividend,81.25,KASE record date 2026-10-14 (register as of 00:00); T+2 settlement -> ex-date 2026-10-12; KZT 81.25 per share; source https://kase.kz/api/instruments/shares/KEGC/dividends
+KKGBp,2009-11-10,dividend,0.04,KASE record date 2009-11-10 (register as of 00:00); T+0 settlement -> ex-date 2009-11-10; KZT 0.04 per share; source https://kase.kz/api/instruments/shares/KKGBp/dividends
+KKGBp,2010-11-10,dividend,0.04,KASE record date 2010-11-10 (register as of 00:00); T+0 settlement -> ex-date 2010-11-10; KZT 0.04 per share; source https://kase.kz/api/instruments/shares/KKGBp/dividends
+KKGBp,2011-11-14,dividend,0.04,KASE record date 2011-11-12 (register as of 00:00); T+0 settlement -> ex-date 2011-11-14; KZT 0.04 per share; source https://kase.kz/api/instruments/shares/KKGBp/dividends
+KKGBp,2012-11-12,dividend,0.04,KASE record date 2012-11-12 (register as of 00:00); T+0 settlement -> ex-date 2012-11-12; KZT 0.04 per share; source https://kase.kz/api/instruments/shares/KKGBp/dividends
+KKGBp,2013-11-12,dividend,6.1808,KASE record date 2013-11-12 (register as of 00:00); T+0 settlement -> ex-date 2013-11-12; KZT 6.1808 per share; source https://kase.kz/api/instruments/shares/KKGBp/dividends
+KKGBp,2014-11-12,dividend,0.04,KASE record date 2014-11-12 (register as of 00:00); T+0 settlement -> ex-date 2014-11-12; KZT 0.04 per share; source https://kase.kz/api/instruments/shares/KKGBp/dividends
+KKGBp,2015-11-10,dividend,0.04,KASE record date 2015-11-10 (register as of 00:00); T+0 settlement -> ex-date 2015-11-10; KZT 0.04 per share; source https://kase.kz/api/instruments/shares/KKGBp/dividends
+KKGBp,2016-11-08,dividend,0.04,KASE record date 2016-11-08 (register as of 00:00); T+0 settlement -> ex-date 2016-11-08; KZT 0.04 per share; source https://kase.kz/api/instruments/shares/KKGBp/dividends
 KMGZ,2023-05-29,dividend,491.71,KASE record date 2023-05-31 (register as of 00:00); T+2 settlement -> ex-date 2023-05-29; KZT 491.71 per share; source https://kase.kz/api/instruments/shares/KMGZ/dividends
 KMGZ,2024-05-27,dividend,491.71,KASE record date 2024-05-29 (register as of 00:00); T+2 settlement -> ex-date 2024-05-27; KZT 491.71 per share; source https://kase.kz/api/instruments/shares/KMGZ/dividends
 KMGZ,2025-05-28,dividend,491.71,KASE record date 2025-05-30 (register as of 00:00); T+2 settlement -> ex-date 2025-05-28; KZT 491.71 per share; source https://kase.kz/api/instruments/shares/KMGZ/dividends
 KMGZ,2026-05-28,dividend,573.66,KASE record date 2026-05-30 (register as of 00:00); T+2 settlement -> ex-date 2026-05-28; KZT 573.66 per share; source https://kase.kz/api/instruments/shares/KMGZ/dividends
+KSPI,2019-08-14,dividend,172.0,KASE record date 2019-08-16 (register as of 00:00); T+2 settlement -> ex-date 2019-08-14; KZT 172 per share; source https://kase.kz/api/instruments/shares/KSPI/dividends
+KSPI,2019-10-03,dividend,175.0,KASE record date 2019-10-07 (register as of 00:00); T+2 settlement -> ex-date 2019-10-03; KZT 175 per share; source https://kase.kz/api/instruments/shares/KSPI/dividends
 KSPI,2021-08-20,dividend,415.0,KASE record date 2021-08-24 (register as of 00:00); T+2 settlement -> ex-date 2021-08-20; KZT 415 per share; source https://kase.kz/api/instruments/shares/KSPI/dividends
 KSPI,2021-11-19,dividend,468.0,KASE record date 2021-11-23 (register as of 00:00); T+2 settlement -> ex-date 2021-11-19; KZT 468 per share; source https://kase.kz/api/instruments/shares/KSPI/dividends
 KSPI,2022-08-19,dividend,500.0,KASE record date 2022-08-23 (register as of 00:00); T+2 settlement -> ex-date 2022-08-19; KZT 500 per share; source https://kase.kz/api/instruments/shares/KSPI/dividends
@@ -55,6 +85,14 @@ KZAP,2023-07-12,dividend,774.88,KASE record date 2023-07-14 (register as of 00:0
 KZAP,2024-05-23,dividend,1213.19,KASE record date 2024-05-27 (register as of 00:00); T+2 settlement -> ex-date 2024-05-23; KZT 1213.19 per share; source https://kase.kz/api/instruments/shares/KZAP/dividends
 KZAP,2025-07-14,dividend,1264.12,KASE record date 2025-07-16 (register as of 00:00); T+2 settlement -> ex-date 2025-07-14; KZT 1264.12 per share; source https://kase.kz/api/instruments/shares/KZAP/dividends
 KZAP,2026-07-23,dividend,1292.27,KASE record date 2026-07-27 (register as of 00:00); T+2 settlement -> ex-date 2026-07-23; KZT 1292.27 per share; source https://kase.kz/api/instruments/shares/KZAP/dividends
+KZTK,2008-06-30,dividend,544.79,KASE record date 2008-06-30 (register as of 00:00); T+0 settlement -> ex-date 2008-06-30; KZT 544.79 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
+KZTK,2012-05-16,dividend,19888.07,KASE record date 2012-05-16 (register as of 00:00); T+0 settlement -> ex-date 2012-05-16; KZT 19888.1 per share (1328.8 + 18559.3); source https://kase.kz/api/instruments/shares/KZTK/dividends
+KZTK,2013-06-03,dividend,161.03,KASE record date 2013-06-02 (register as of 00:00); T+0 settlement -> ex-date 2013-06-03; KZT 161.03 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
+KZTK,2014-01-06,dividend,2603.9,KASE record date 2014-01-05 (register as of 00:00); T+0 settlement -> ex-date 2014-01-06; KZT 2603.9 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
+KZTK,2015-04-27,dividend,101.73,KASE record date 2015-04-26 (register as of 00:00); T+0 settlement -> ex-date 2015-04-27; KZT 101.73 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
+KZTK,2016-04-21,dividend,331.73,KASE record date 2016-04-24 (register as of 00:00); T+2 settlement -> ex-date 2016-04-21; KZT 331.73 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
+KZTK,2017-04-20,dividend,404.57,KASE record date 2017-04-23 (register as of 00:00); T+2 settlement -> ex-date 2017-04-20; KZT 404.57 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
+KZTK,2018-05-31,dividend,1595.79,KASE record date 2018-06-03 (register as of 00:00); T+2 settlement -> ex-date 2018-05-31; KZT 1595.79 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
 KZTK,2019-05-03,dividend,781.06,KASE record date 2019-05-05 (register as of 00:00); T+2 settlement -> ex-date 2019-05-03; KZT 781.06 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
 KZTK,2020-04-29,dividend,778.11,KASE record date 2020-05-03 (register as of 00:00); T+2 settlement -> ex-date 2020-04-29; KZT 778.11 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
 KZTK,2021-04-29,dividend,1730.88,KASE record date 2021-05-02 (register as of 00:00); T+2 settlement -> ex-date 2021-04-29; KZT 1730.88 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
@@ -63,6 +101,41 @@ KZTK,2023-10-26,dividend,3038.36,KASE record date 2023-10-29 (register as of 00:
 KZTK,2024-05-03,dividend,2096.6,KASE record date 2024-05-05 (register as of 00:00); T+2 settlement -> ex-date 2024-05-03; KZT 2096.6 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
 KZTK,2025-05-22,dividend,26664.88,KASE record date 2025-05-25 (register as of 00:00); T+2 settlement -> ex-date 2025-05-22; KZT 26664.9 per share (19923.7 + 6741.14); source https://kase.kz/api/instruments/shares/KZTK/dividends
 KZTK,2026-04-29,dividend,321.06,KASE record date 2026-05-03 (register as of 00:00); T+2 settlement -> ex-date 2026-04-29; KZT 321.06 per share; source https://kase.kz/api/instruments/shares/KZTK/dividends
+KZTKp,2008-01-25,dividend,300.0,KASE record date 2008-01-25 (register as of 00:00); T+0 settlement -> ex-date 2008-01-25; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2008-06-30,dividend,244.79,KASE record date 2008-06-30 (register as of 00:00); T+0 settlement -> ex-date 2008-06-30; KZT 244.79 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2009-01-22,dividend,300.0,KASE record date 2009-01-22 (register as of 00:00); T+0 settlement -> ex-date 2009-01-22; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2010-02-04,dividend,422.09,KASE record date 2010-02-04 (register as of 00:00); T+0 settlement -> ex-date 2010-02-04; KZT 422.09 per share (300 + 122.09); source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2010-12-13,dividend,300.0,KASE record date 2010-12-13 (register as of 00:00); T+0 settlement -> ex-date 2010-12-13; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2011-12-08,dividend,300.0,KASE record date 2011-12-08 (register as of 00:00); T+0 settlement -> ex-date 2011-12-08; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2012-05-16,dividend,19588.07,KASE record date 2012-05-16 (register as of 00:00); T+0 settlement -> ex-date 2012-05-16; KZT 19588.1 per share (1028.8 + 18559.3); source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2013-04-02,dividend,161.03,KASE record date 2013-04-02 (register as of 00:00); T+0 settlement -> ex-date 2013-04-02; KZT 161.03 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2014-01-06,dividend,2603.9,KASE record date 2014-01-05 (register as of 00:00); T+0 settlement -> ex-date 2014-01-06; KZT 2603.9 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2014-12-08,dividend,300.0,KASE record date 2014-12-07 (register as of 00:00); T+0 settlement -> ex-date 2014-12-08; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2015-12-18,dividend,300.0,KASE record date 2015-12-17 (register as of 00:00); T+0 settlement -> ex-date 2015-12-18; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2016-12-12,dividend,300.0,KASE record date 2016-12-11 (register as of 00:00); T+0 settlement -> ex-date 2016-12-12; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2017-04-24,dividend,104.54,KASE record date 2017-04-23 (register as of 00:00); T+0 settlement -> ex-date 2017-04-24; KZT 104.54 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2017-12-10,dividend,300.0,KASE record date 2017-12-10 (register as of 00:00); T+0 settlement -> ex-date 2017-12-10; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2018-12-04,dividend,300.0,KASE record date 2018-12-03 (register as of 00:00); T+0 settlement -> ex-date 2018-12-04; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2019-05-06,dividend,481.06,KASE record date 2019-05-05 (register as of 00:00); T+0 settlement -> ex-date 2019-05-06; KZT 481.06 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2019-12-03,dividend,300.0,KASE record date 2019-12-02 (register as of 00:00); T+0 settlement -> ex-date 2019-12-03; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2020-05-04,dividend,478.11,KASE record date 2020-05-03 (register as of 00:00); T+0 settlement -> ex-date 2020-05-04; KZT 478.11 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2020-12-07,dividend,300.0,KASE record date 2020-12-06 (register as of 00:00); T+0 settlement -> ex-date 2020-12-07; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2021-05-04,dividend,1430.88,KASE record date 2021-05-02 (register as of 00:00); T+0 settlement -> ex-date 2021-05-04; KZT 1430.88 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2021-12-06,dividend,300.0,KASE record date 2021-12-05 (register as of 00:00); T+0 settlement -> ex-date 2021-12-06; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2022-11-07,dividend,3290.39,KASE record date 2022-11-06 (register as of 00:00); T+0 settlement -> ex-date 2022-11-07; KZT 3290.39 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2022-12-05,dividend,300.0,KASE record date 2022-12-04 (register as of 00:00); T+0 settlement -> ex-date 2022-12-05; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2023-12-04,dividend,300.0,KASE record date 2023-12-03 (register as of 00:00); T+0 settlement -> ex-date 2023-12-04; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2024-04-05,dividend,1796.6,KASE record date 2024-04-05 (register as of 00:00); T+0 settlement -> ex-date 2024-04-05; KZT 1796.6 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2024-12-09,dividend,300.0,KASE record date 2024-12-08 (register as of 00:00); T+0 settlement -> ex-date 2024-12-09; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2025-05-26,dividend,26364.88,KASE record date 2025-05-25 (register as of 00:00); T+0 settlement -> ex-date 2025-05-26; KZT 26364.9 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2025-12-15,dividend,300.0,KASE record date 2025-12-14 (register as of 00:00); T+0 settlement -> ex-date 2025-12-15; KZT 300 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTKp,2026-05-04,dividend,21.06,KASE record date 2026-05-03 (register as of 00:00); T+0 settlement -> ex-date 2026-05-04; KZT 21.06 per share; source https://kase.kz/api/instruments/shares/KZTKp/dividends
+KZTO,2013-06-13,dividend,75.0,KASE record date 2013-06-13 (register as of 00:00); T+0 settlement -> ex-date 2013-06-13; KZT 75 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
+KZTO,2014-06-13,dividend,109.0,KASE record date 2014-06-13 (register as of 00:00); T+0 settlement -> ex-date 2014-06-13; KZT 109 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
+KZTO,2015-05-27,dividend,120.71,KASE record date 2015-05-27 (register as of 00:00); T+0 settlement -> ex-date 2015-05-27; KZT 120.71 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
+KZTO,2016-06-09,dividend,133.0,KASE record date 2016-06-11 (register as of 00:00); T+2 settlement -> ex-date 2016-06-09; KZT 133 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
+KZTO,2017-06-12,dividend,155.0,KASE record date 2017-06-14 (register as of 00:00); T+2 settlement -> ex-date 2017-06-12; KZT 155 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
+KZTO,2018-06-08,dividend,160.0,KASE record date 2018-06-12 (register as of 00:00); T+2 settlement -> ex-date 2018-06-08; KZT 160 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
 KZTO,2019-06-03,dividend,104.0,KASE record date 2019-06-05 (register as of 00:00); T+2 settlement -> ex-date 2019-06-03; KZT 104 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
 KZTO,2020-06-01,dividend,118.0,KASE record date 2020-06-03 (register as of 00:00); T+2 settlement -> ex-date 2020-06-01; KZT 118 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
 KZTO,2021-06-09,dividend,132.0,KASE record date 2021-06-11 (register as of 00:00); T+2 settlement -> ex-date 2021-06-09; KZT 132 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
@@ -71,3 +144,21 @@ KZTO,2023-06-01,dividend,39.0,KASE record date 2023-06-05 (register as of 00:00)
 KZTO,2024-05-30,dividend,65.0,KASE record date 2024-06-03 (register as of 00:00); T+2 settlement -> ex-date 2024-05-30; KZT 65 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
 KZTO,2025-05-30,dividend,86.0,KASE record date 2025-06-03 (register as of 00:00); T+2 settlement -> ex-date 2025-05-30; KZT 86 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
 KZTO,2026-06-03,dividend,118.0,KASE record date 2026-06-05 (register as of 00:00); T+2 settlement -> ex-date 2026-06-03; KZT 118 per share; source https://kase.kz/api/instruments/shares/KZTO/dividends
+RDGZ,2008-06-09,dividend,563.0,KASE record date 2008-06-09 (register as of 00:00); T+0 settlement -> ex-date 2008-06-09; KZT 563 per share; source https://kase.kz/api/instruments/shares/RDGZ/dividends
+RDGZ,2009-06-08,dividend,656.0,KASE record date 2009-06-08 (register as of 00:00); T+0 settlement -> ex-date 2009-06-08; KZT 656 per share; source https://kase.kz/api/instruments/shares/RDGZ/dividends
+RDGZ,2010-06-07,dividend,704.0,KASE record date 2010-06-07 (register as of 00:00); T+0 settlement -> ex-date 2010-06-07; KZT 704 per share; source https://kase.kz/api/instruments/shares/RDGZ/dividends
+RDGZ,2011-05-16,dividend,800.0,KASE record date 2011-05-16 (register as of 00:00); T+0 settlement -> ex-date 2011-05-16; KZT 800 per share; source https://kase.kz/api/instruments/shares/RDGZ/dividends
+RDGZ,2012-06-11,dividend,1300.0,KASE record date 2012-06-11 (register as of 00:00); T+0 settlement -> ex-date 2012-06-11; KZT 1300 per share; source https://kase.kz/api/instruments/shares/RDGZ/dividends
+RDGZ,2013-05-31,dividend,1619.0,KASE record date 2013-05-31 (register as of 00:00); T+0 settlement -> ex-date 2013-05-31; KZT 1619 per share; source https://kase.kz/api/instruments/shares/RDGZ/dividends
+RDGZ,2014-05-23,dividend,1976.0,KASE record date 2014-05-23 (register as of 00:00); T+0 settlement -> ex-date 2014-05-23; KZT 1976 per share; source https://kase.kz/api/instruments/shares/RDGZ/dividends
+RDGZ,2015-06-01,dividend,440.0,KASE record date 2015-06-01 (register as of 00:00); T+0 settlement -> ex-date 2015-06-01; KZT 440 per share; source https://kase.kz/api/instruments/shares/RDGZ/dividends
+RDGZ,2017-05-31,dividend,289.0,KASE record date 2017-06-02 (register as of 00:00); T+2 settlement -> ex-date 2017-05-31; KZT 289 per share; source https://kase.kz/api/instruments/shares/RDGZ/dividends
+RDGZp,2010-06-07,dividend,704.0,KASE record date 2010-06-07 (register as of 00:00); T+0 settlement -> ex-date 2010-06-07; KZT 704 per share; source https://kase.kz/api/instruments/shares/RDGZp/dividends
+RDGZp,2011-05-16,dividend,800.0,KASE record date 2011-05-16 (register as of 00:00); T+0 settlement -> ex-date 2011-05-16; KZT 800 per share; source https://kase.kz/api/instruments/shares/RDGZp/dividends
+RDGZp,2012-06-11,dividend,1300.0,KASE record date 2012-06-11 (register as of 00:00); T+0 settlement -> ex-date 2012-06-11; KZT 1300 per share; source https://kase.kz/api/instruments/shares/RDGZp/dividends
+RDGZp,2013-05-31,dividend,1619.0,KASE record date 2013-05-31 (register as of 00:00); T+0 settlement -> ex-date 2013-05-31; KZT 1619 per share; source https://kase.kz/api/instruments/shares/RDGZp/dividends
+RDGZp,2014-05-23,dividend,1976.0,KASE record date 2014-05-23 (register as of 00:00); T+0 settlement -> ex-date 2014-05-23; KZT 1976 per share; source https://kase.kz/api/instruments/shares/RDGZp/dividends
+RDGZp,2015-06-01,dividend,440.0,KASE record date 2015-06-01 (register as of 00:00); T+0 settlement -> ex-date 2015-06-01; KZT 440 per share; source https://kase.kz/api/instruments/shares/RDGZp/dividends
+RDGZp,2016-06-03,dividend,25.0,KASE record date 2016-06-03 (register as of 00:00); T+0 settlement -> ex-date 2016-06-03; KZT 25 per share; source https://kase.kz/api/instruments/shares/RDGZp/dividends
+RDGZp,2017-06-02,dividend,289.0,KASE record date 2017-06-02 (register as of 00:00); T+0 settlement -> ex-date 2017-06-02; KZT 289 per share; source https://kase.kz/api/instruments/shares/RDGZp/dividends
+RDGZp,2018-06-01,dividend,25.0,KASE record date 2018-06-01 (register as of 00:00); T+0 settlement -> ex-date 2018-06-01; KZT 25 per share; source https://kase.kz/api/instruments/shares/RDGZp/dividends

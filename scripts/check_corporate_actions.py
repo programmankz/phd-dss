@@ -33,15 +33,22 @@ def trading_calendar(raw: pd.DataFrame) -> pd.DatetimeIndex:
     """KASE trading days: weekdays present in the price file, plus weekend days on which at
     least half of the listed shares changed price (the official working Saturdays/Sundays of
     Kazakhstan); single stray weekend bars of one or two shares are not trading days."""
-    listed = raw.notna().sum(axis=1)
-    moved = (raw.diff().abs() > 0).sum(axis=1)
-    keep = (raw.index.dayofweek < 5) | (moved >= listed / 2)
+    listed = raw.ffill().notna().sum(axis=1)          # shares that have started trading
+    traded = raw.notna().sum(axis=1)                  # shares with a deal that day
+    keep = (raw.index.dayofweek < 5) | (traded >= listed / 2)
     return raw.index[keep]
 
 
 def trading_days(s: pd.Series) -> pd.Series:
     """Drop forward-filled repeats at the start of the series and missing values."""
     return s.dropna()
+
+
+def load_raw() -> pd.DataFrame:
+    """Unadjusted closes of data/prices_kase.csv joined with data/prices_kase_extra.csv (if any)."""
+    frames = [loaders._dated_frame(p, "Date,<тикер1>,…") for p in
+              (loaders.data_dir() / "prices_kase.csv", loaders.data_dir() / "prices_kase_extra.csv") if p.exists()]
+    return pd.concat(frames, axis=1, sort=True)
 
 
 def check_dividends(raw: pd.DataFrame, actions: pd.DataFrame, window: int = WINDOW) -> pd.DataFrame:
@@ -56,7 +63,7 @@ def check_dividends(raw: pd.DataFrame, actions: pd.DataFrame, window: int = WIND
                          "close_before": float("nan"), "expected": float("nan"), "fall_ex": float("nan"),
                          "fall_max": float("nan"), "match": "нет цен"})
             continue
-        r = s.pct_change()
+        r = s.pct_change()                               # change since the previous trade
         lo, hi = max(pos - window, 1), min(pos + window, len(s) - 1)
         win = r.iloc[lo:hi + 1]
         drop_day = win.idxmin()
@@ -96,7 +103,7 @@ def build_dividend_actions(div: pd.DataFrame, raw: pd.DataFrame) -> pd.DataFrame
         if ex <= first:
             continue
         amount = round(float(g["per_share"].sum()), 6)
-        scheme = "T+2" if ex >= pd.Timestamp(t2_from) else "T+0"
+        scheme = "T+2" if t2_from is not None and ex >= pd.Timestamp(t2_from) else "T+0"
         parts = " + ".join(f"{v:g}" for v in g["per_share"]) if len(g) > 1 else ""
         note = (f"KASE record date {rec:%Y-%m-%d} (register as of 00:00); {scheme} settlement -> ex-date "
                 f"{ex:%Y-%m-%d}; KZT {amount:g} per share" + (f" ({parts})" if parts else "") +
@@ -119,7 +126,7 @@ def write_actions(raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def big_moves(adj: pd.DataFrame, threshold: float = BIG_MOVE) -> pd.DataFrame:
-    r = adj.pct_change(fill_method=None).stack()
+    r = adj.ffill().pct_change()[adj.notna()].stack()   # change since the previous trade
     r = r[r.abs() > threshold]
     return r.rename("change").reset_index().rename(columns={"level_1": "ticker"})
 
@@ -145,7 +152,7 @@ def main(argv=None) -> int:
     p.add_argument("--write", action="store_true", help="rebuild dividend rows from data/dividends_kase.csv")
     a = p.parse_args(argv)
 
-    raw = loaders._dated_frame(loaders.data_dir() / "prices_kase.csv", "Date,<тикер1>,…")
+    raw = load_raw()
     if a.write:
         n = (write_actions(raw)["method"] == "dividend").sum()
         print(f"corporate_actions.csv: {n} дивидендов пересобрано из dividends_kase.csv\n")

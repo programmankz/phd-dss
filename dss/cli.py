@@ -1,6 +1,6 @@
 """Command-line interface.
 
-    python -m dss.cli fetch gdp|fx|nse|kase|rates  download real data into ./data
+    python -m dss.cli fetch gdp|fx|nse|kase|rates|...  download real data into ./data
     python -m dss.cli warmup               compute and cache all modules
     python -m dss.cli decide [options]     print the recommendation
     python -m dss.cli report -o out.html   write the HTML report
@@ -32,7 +32,8 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="dss", description="СППР управления инвестиционным портфелем")
     sub = p.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch", help="загрузить реальные данные")
-    f.add_argument("what", choices=["gdp", "fx", "nse", "kase", "rates", "kase-dividends"])
+    f.add_argument("what", choices=["gdp", "fx", "nse", "kase", "rates", "kase-dividends", "kase-extra",
+                                         "kase-index", "bonds"])
     f.add_argument("--start", default=None)
     f.add_argument("--tickers", default=None, help="kase/nse: тикеры через запятую вместо набора по умолчанию")
     for name in ("warmup", "decide", "report", "sensitivity", "significance", "export"):
@@ -79,12 +80,32 @@ def main(argv=None) -> int:
             df = loaders.fetch_kase_dividends(tickers)
             print(f"dividends_kase.csv: {len(df)} выплат по {df['ticker'].nunique()} бумагам, "
                   f"даты фиксации {df['record_date'].min()} – {df['record_date'].max()}")
+        elif a.what == "kase-extra":
+            tickers = a.tickers.split(",") if a.tickers else loaders.KASE_EXTRA_TICKERS
+            h = loaders.fetch_kase_history(tickers, start=a.start or "2008-01-01", fill="none")
+            h["close"].to_csv(out / "prices_kase_extra.csv")
+            h["volume"].to_csv(out / "volumes_kase_extra.csv")
+            print(f"prices_kase_extra.csv: {h['close'].shape[1]} бумаг, {h['close'].index.min():%Y-%m-%d} – "
+                  f"{h['close'].index.max():%Y-%m-%d}")
+        elif a.what == "kase-index":
+            df = loaders.fetch_kase_index(start=a.start or "2008-01-01")
+            bi = loaders.fetch_kase_bond_indices(start=a.start or "2008-01-01")
+            print(f"index_kase.csv: {len(df)} дней, {df.index.min():%Y-%m-%d} – {df.index.max():%Y-%m-%d}; "
+                  f"bond_indices_kase.csv: {bi.shape[1]} индексов с {bi.index.min():%Y-%m-%d}")
+        elif a.what == "bonds":
+            codes = a.tickers.split(",") if a.tickers else None
+            px, meta = loaders.fetch_kase_bonds(codes, start=a.start or "2008-01-01")
+            print(f"bonds_kase.csv: {px.shape[1]} выпусков, {int(px.notna().sum().sum())} цен; bonds_kase_meta.csv")
         elif a.what == "kase":
             tickers = a.tickers.split(",") if a.tickers else loaders.KASE_TICKERS
-            df = loaders.fetch_kase(tickers, start=a.start or "2019-01-01")
+            # closes of trading days only (NaN otherwise): dividends are then removed from real
+            # trades, and validate_prices forward-fills the adjusted series
+            h = loaders.fetch_kase_history(tickers, start=a.start or "2008-01-01", fill="none")
+            df = h["close"]
             df.to_csv(out / "prices_kase.csv")
+            h["volume"].to_csv(out / "volumes_kase.csv")
             print(f"prices_kase.csv: {df.shape[1]} бумаг, {df.index.min():%Y-%m-%d} – {df.index.max():%Y-%m-%d}; "
-                  f"общая история с {df.dropna().index.min():%Y-%m-%d}")
+                  f"общая история с {df.ffill().dropna().index.min():%Y-%m-%d}")
             fund = out / "fundamentals_kase.csv"
             if not fund.exists():  # sectors only: kase.kz has no P/B, P/E feed; fill them in by hand
                 pd.DataFrame({"ticker": df.columns, "sector": [loaders.KASE_SECTORS.get(t, "") for t in df.columns],
