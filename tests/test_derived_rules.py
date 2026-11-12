@@ -71,3 +71,8 @@ def test_regime_moments_split_and_minimum():
     m = integration.regime_moments(r, adv)
     assert np.isclose(m.mu_n, 0.252) and np.isclose(m.mu_r, -0.504) and m.n_n == m.n_r == 150
     assert integration.regime_moments(r, adv, min_days=200) is None
+
+
+def test_derived_h_non_decreasing_in_expected_depreciation():
+    hs = [integration.derived_fx_hedge(0.6, m, 0.001, 0.01, 3.0) for m in np.linspace(-0.05, 0.10, 16)]
+    assert all(b >= a - 1e-12 for a, b in zip(hs, hs[1:]))

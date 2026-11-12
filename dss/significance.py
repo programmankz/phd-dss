@@ -162,3 +162,64 @@ def deflated_sharpe(daily_excess, n_trials: int, sr_trials=None) -> tuple[float,
         sr0 = 0.0
     se = np.sqrt((1 - skew * sr + (kurt - 1) / 4 * sr ** 2) / (n - 1))
     return float(stats.norm.cdf((sr - sr0) / se)), float(sr0 * np.sqrt(252))
+
+
+def newey_west_se(X: np.ndarray, resid: np.ndarray, lag: int) -> np.ndarray:
+    """HAC (Newey-West, Bartlett kernel) standard errors of OLS coefficients."""
+    X = np.asarray(X, float)
+    u = np.asarray(resid, float)
+    n = len(u)
+    xu = X * u[:, None]
+    s = xu.T @ xu / n
+    for k in range(1, lag + 1):
+        w = 1 - k / (lag + 1)
+        g = xu[k:].T @ xu[:-k] / n
+        s += w * (g + g.T)
+    inv = np.linalg.inv(X.T @ X / n)
+    return np.sqrt(np.diag(inv @ s @ inv) / n)
+
+
+def pesaran_timmermann(forecast, realised, nw_lag: int | None = None) -> dict:
+    """Pesaran-Timmermann (1992) test of directional accuracy, H0: the sign of the forecast is
+    independent of the sign of the outcome; one-sided p-value (skill = more correct signs).
+
+    ``nw_lag`` = None: the classic statistic for independent observations. ``nw_lag`` = L: the
+    regression form 1[y > 0] = a + b 1[f > 0] + e with Newey-West standard errors (lag L), valid
+    for overlapping multi-day targets; b = 0 under H0. Also returns the hit rate and the z-test
+    of the hit rate against 1/2 (which ignores both the overlap and the base rate)."""
+    f, y = np.asarray(forecast, float), np.asarray(realised, float)
+    m = np.isfinite(f) & np.isfinite(y) & (y != 0)
+    f, y = f[m], y[m]
+    n = len(y)
+    if n < 10:
+        return {"n": n, "hit_rate": np.nan, "stat": np.nan, "p_value": np.nan, "z_half": np.nan, "p_half": np.nan}
+    x, z = (f > 0).astype(float), (y > 0).astype(float)
+    hit = float((x == z).mean())
+    z_half = (hit - 0.5) / np.sqrt(0.25 / n)
+    out = {"n": n, "hit_rate": hit, "z_half": float(z_half), "p_half": float(stats.norm.sf(z_half))}
+    if nw_lag is None:
+        py, px = z.mean(), x.mean()
+        p_star = py * px + (1 - py) * (1 - px)
+        v_p = p_star * (1 - p_star) / n
+        v_star = ((2 * py - 1) ** 2 * px * (1 - px) / n + (2 * px - 1) ** 2 * py * (1 - py) / n
+                  + 4 * py * px * (1 - py) * (1 - px) / n ** 2)
+        den = v_p - v_star
+        stat = (hit - p_star) / np.sqrt(den) if den > 0 else np.nan
+    else:
+        if x.std() == 0:
+            return out | {"stat": np.nan, "p_value": np.nan}
+        X = np.column_stack([np.ones(n), x])
+        beta, *_ = np.linalg.lstsq(X, z, rcond=None)
+        se = newey_west_se(X, z - X @ beta, nw_lag)
+        stat = beta[1] / se[1] if se[1] > 0 else np.nan
+    return out | {"stat": float(stat), "p_value": float(stats.norm.sf(stat)) if np.isfinite(stat) else np.nan}
+
+
+def ic_t_stat(ic) -> tuple[float, int]:
+    """t_IC = mean(IC) sqrt(n) / sd(IC) of a series of information coefficients (NaN dropped)."""
+    ic = np.asarray(ic, float)
+    ic = ic[np.isfinite(ic)]
+    n = len(ic)
+    if n < 3 or ic.std(ddof=1) == 0:
+        return np.nan, n
+    return float(ic.mean() * np.sqrt(n) / ic.std(ddof=1)), n

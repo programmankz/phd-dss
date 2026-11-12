@@ -55,6 +55,7 @@ from dss.pipeline import cached, _fingerprint  # noqa: E402
 
 KASE7 = ["HSBK", "CCBN", "KZTK", "KCEL", "KEGC", "KZTO", "KZAP"]
 KZT, USD = "KZT (base rate)", "USD (T-bill)"
+GATE_T, GATE_WINDOW, GATE_MIN = 1.645, 52, 26   # signal admission: one-sided 5 %, last 52 weekly decisions
 LOW_GROWTH_QUANTILE = 0.25   # derived rules: adverse regime = years with growth below this quantile
 FX_COV_WINDOW = 756          # derived rules: trailing trading days for Var(delta) and Cov(R_E, delta)
 SHOCKS = {"20.02-31.03.2020": ("2020-02-20", "2020-03-31"), "15.02-31.03.2022": ("2022-02-15", "2022-03-31")}
@@ -149,6 +150,9 @@ class Config:
     fx: bool           # dollar share from rule (6); else h = 0
     m4: bool           # weights from Module IV optimiser (4); else equal weights
     d_fixed: float | None = None   # overrides d (EW 100 %: 1.0)
+    gate: bool = False             # Module IV signal used only if t_IC > GATE_T (else gate_fallback weights)
+    gate_fallback: str = "min_variance"   # risk-based weights when the signal is not admitted (or "hrp")
+    kappa: float = 0.0             # turnover penalty of the optimiser, kappa ||w - w_prev||_1
     weights: str | None = None     # baseline rule of the risky part (dss.baselines), replaces m4/clusters
     clusters: bool | None = None   # Module III cluster limits; None: on together with m4 (as in Tables 4-5).
                                    # m4 off, clusters on: equal weights per cluster, capped (cluster_equal_weights);
@@ -179,6 +183,8 @@ class Engine:
         if rules_mode not in ("expert", "derived"):
             raise ValueError(f"rules_mode must be 'expert' or 'derived', not {rules_mode!r}")
         self.rules_mode, self.gamma, self._derived = rules_mode, gamma, {}
+        self._prev_risky: dict = {}
+        self.cluster_distance, self.cluster_volumes = "features", None   # Module III variant (section 6)
         self.use_cache = use_cache
         self.days = inp.prices.index
         self.start, self.end = pd.Timestamp(start), pd.Timestamp(end)
@@ -190,6 +196,8 @@ class Engine:
             fn = lambda: signals.run(inp.prices, ("ridge", "rf", "gb"), config.WF_INITIAL_TRAIN, config.WF_RETRAIN_EVERY)  # noqa: E731
             s = cached("e2e_signals", _fingerprint(inp.prices), fn) if use_cache else fn()
             self.ranks, self.ic = s.ranks, float(s.metrics.iloc[-1]["IC"])
+            realised = np.log(inp.prices).diff().shift(-1)           # next-day log return of date d
+            self.ic_daily = signals.daily_ic(s.smoothed, realised)
             first = s.ranks.dropna(how="all").index[0]
             start = resolve_start(self.start, first, log)
             if start != self.start:
@@ -215,11 +223,18 @@ class Engine:
     def clusters_at(self, t) -> pd.Series:
         if t not in self._clusters:
             window = self.inp.prices.loc[:t].iloc[-config.COV_WINDOW:]
-            self._clusters[t] = clustering.cluster_assets(window).labels["K-medoids"]
+            self._clusters[t] = clustering.cluster_assets(window, distance=self.cluster_distance,
+                                                          volumes=self.cluster_volumes).labels["K-medoids"]
         return self._clusters[t]
 
     def cov_at(self, t) -> np.ndarray:
         return portfolio.covariance(self.returns.loc[:t].dropna().iloc[-config.COV_WINDOW:], "ledoit_wolf")
+
+    def gate_at(self, t) -> tuple[float, int]:
+        """t_IC over the last GATE_WINDOW rebalancing dates before t whose next-day return is known at t."""
+        weekly = weekly_dates(self.days, self.ic_daily.dropna().index.min(), t)
+        past = weekly[weekly < t][-GATE_WINDOW:]
+        return significance.ic_t_stat(self.ic_daily.reindex(past).to_numpy())
 
     # --- inputs of the derived rules as of t
     def derived_at(self, t) -> dict:
@@ -320,9 +335,21 @@ class Engine:
             rf = float(self.inp.rates["kzt"].loc[:t].iloc[-1])
             w = baselines.weights(cfg.weights, window, self.profile.max_asset_weight, ranks, rf)
         elif cfg.m4:
-            s = self.ranks.loc[:t].iloc[-1].reindex(self.inp.prices.columns).fillna(0.5).to_numpy()
-            w = portfolio.max_signal_to_risk(s, self.cov_at(t), self.profile.max_asset_weight, labels, None,
-                                             self.profile.cluster_cap if labels is not None else None)
+            cap = self.profile.cluster_cap if labels is not None else None
+            admitted = True
+            if cfg.gate:
+                t_ic, n_ic = self.gate_at(t)
+                admitted = bool(np.isfinite(t_ic) and n_ic >= GATE_MIN and t_ic > GATE_T)
+                out |= {"t_ic": t_ic, "n_ic": n_ic, "signal_admitted": admitted}
+            if admitted:
+                s = self.ranks.loc[:t].iloc[-1].reindex(self.inp.prices.columns).fillna(0.5).to_numpy()
+                w = portfolio.max_signal_to_risk(s, self.cov_at(t), self.profile.max_asset_weight, labels, None, cap,
+                                                 w_prev=self._prev_risky.get(cfg.name), kappa=cfg.kappa)
+            elif cfg.gate_fallback == "hrp":
+                w = baselines.hrp(self.cov_at(t), self.profile.max_asset_weight)
+            else:
+                w = portfolio.min_variance(self.cov_at(t), self.profile.max_asset_weight, labels, None, cap)
+            self._prev_risky[cfg.name] = w
         elif labels is not None:
             w = portfolio.cluster_equal_weights(labels, self.profile.max_asset_weight, self.profile.cluster_cap)
         else:

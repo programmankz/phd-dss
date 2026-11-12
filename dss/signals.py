@@ -279,3 +279,16 @@ def run(prices: pd.DataFrame, models=("ridge", "rf", "gb"), train_share: float =
                            "smoothed_score": smoothed.loc[last], "rank_signal": ranks.loc[last]}
                           ).sort_values("rank_signal", ascending=False)
     return SignalResult(out, smoothed, ranks, metrics, pd.Timestamp(test_dates[0]), models, latest)
+
+
+def daily_ic(scores: pd.DataFrame, realised: pd.DataFrame) -> pd.Series:
+    """Spearman IC per date between ``scores`` and ``realised`` (same dates x assets); NaN with < 3 assets."""
+    y = realised.reindex(index=scores.index, columns=scores.columns)
+    m = scores.notna() & y.notna()
+    a = scores.where(m).rank(axis=1)
+    b = y.where(m).rank(axis=1)
+    a, b = a.sub(a.mean(axis=1), axis=0), b.sub(b.mean(axis=1), axis=0)
+    num = (a * b).sum(axis=1)
+    den = np.sqrt((a ** 2).sum(axis=1) * (b ** 2).sum(axis=1))
+    ic = num / den.replace(0, np.nan)
+    return ic.where(m.sum(axis=1) >= 3)
