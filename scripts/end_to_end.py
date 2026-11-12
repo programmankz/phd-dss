@@ -55,6 +55,8 @@ from dss.pipeline import cached, _fingerprint  # noqa: E402
 
 KASE7 = ["HSBK", "CCBN", "KZTK", "KCEL", "KEGC", "KZTO", "KZAP"]
 KZT, USD = "KZT (base rate)", "USD (T-bill)"
+LOW_GROWTH_QUANTILE = 0.25   # derived rules: adverse regime = years with growth below this quantile
+FX_COV_WINDOW = 756          # derived rules: trailing trading days for Var(delta) and Cov(R_E, delta)
 SHOCKS = {"20.02-31.03.2020": ("2020-02-20", "2020-03-31"), "15.02-31.03.2022": ("2022-02-15", "2022-03-31")}
 
 
@@ -67,6 +69,7 @@ class Inputs:
     gdp: pd.DataFrame           # wide GDP panel
     rates: pd.DataFrame         # calendar days x kzt, usd (fractions)
     source: str
+    market: pd.Series | None = None   # daily equal-weighted return of all KASE stocks quoted that day
 
 
 def load_inputs(tickers, corporate_actions: bool = True) -> Inputs:
@@ -86,7 +89,8 @@ def load_inputs(tickers, corporate_actions: bool = True) -> Inputs:
     if rates is None:
         raise SystemExit(f"ставки: {rlabel}")
     usd = fx_rates["USD"].reindex(prices.index, method="ffill")
-    return Inputs(prices, usd, fx_rates, loaders.load_gdp().frame, rates, f"{label}; {rlabel}")
+    market = px.pct_change(fill_method=None).where(px.notna() & px.shift(1).notna()).mean(axis=1).dropna()
+    return Inputs(prices, usd, fx_rates, loaders.load_gdp().frame, rates, f"{label}; {rlabel}", market)
 
 
 def perturb_inputs(inp: Inputs, date: str, seed: int = 7) -> Inputs:
@@ -169,8 +173,12 @@ class Engine:
     """Point-in-time inputs and decisions for one universe and period."""
 
     def __init__(self, inp: Inputs, profile: str, start, end, rules: config.IntegrationRules = config.RULES,
-                 need_m4: bool = True, use_cache: bool = True, log=print):
+                 need_m4: bool = True, use_cache: bool = True, log=print, rules_mode: str = "expert",
+                 gamma: float | None = None):
         self.inp, self.profile, self.rules, self.log = inp, config.PROFILES[profile], rules, log
+        if rules_mode not in ("expert", "derived"):
+            raise ValueError(f"rules_mode must be 'expert' or 'derived', not {rules_mode!r}")
+        self.rules_mode, self.gamma, self._derived = rules_mode, gamma, {}
         self.use_cache = use_cache
         self.days = inp.prices.index
         self.start, self.end = pd.Timestamp(start), pd.Timestamp(end)
@@ -213,19 +221,88 @@ class Engine:
     def cov_at(self, t) -> np.ndarray:
         return portfolio.covariance(self.returns.loc[:t].dropna().iloc[-config.COV_WINDOW:], "ledoit_wolf")
 
+    # --- inputs of the derived rules as of t
+    def derived_at(self, t) -> dict:
+        """Inputs of d*, h* known at t. Risky part: the equal-weighted market of all KASE stocks in
+        data/prices_kase.csv (history from 2008); adverse regime: calendar years whose published GDP growth
+        of Kazakhstan is below the lower quartile of 2000..Y. Var(delta) and Cov(R_E, delta): the last
+        FX_COV_WINDOW trading days of the market and of the official USD/KZT rate."""
+        if t in self._derived:
+            return self._derived[t]
+        y = published_year(t)
+        g = self.inp.gdp.loc["Kazakhstan"].dropna()
+        g = g[(g.index >= 2000) & (g.index <= y)]
+        adverse_years = set(g.index[g < g.quantile(LOW_GROWTH_QUANTILE)])
+        mk = self.inp.market.loc[:t]
+        mk = mk[mk.index.year <= y]
+        adverse = pd.Series(mk.index.year.isin(adverse_years), index=mk.index)
+        mom = integration.regime_moments(mk, adverse)
+        r = self.inp.rates.loc[:t].iloc[-1]
+        fxr = self.inp.fx_rates.loc[:t].dropna()
+        e_delta = fx.expected_depreciation(fxr)
+        mkt = self.inp.market.loc[:t].iloc[-FX_COV_WINDOW - 1:]
+        usd = fxr["USD"].reindex(mkt.index, method="ffill")
+        both = pd.concat([mkt, usd.pct_change()], axis=1).dropna()
+        cov = float(np.cov(both.to_numpy().T)[0, 1] * 252) if len(both) > 20 else 0.0
+        out = {"moments": mom, "r_kzt": float(r["kzt"]), "r_usd": float(r["usd"]), "e_delta": e_delta,
+               "m": float(r["usd"] + e_delta - r["kzt"]), "var_delta": float(both.iloc[:, 1].var(ddof=1) * 252)
+               if len(both) > 20 else 0.0, "cov_e_delta": cov, "adverse_years": sorted(adverse_years)}
+        self._derived[t] = out
+        return out
+
+    def _gamma(self) -> float:
+        if self.gamma is None:
+            raise RuntimeError("derived rules need gamma: call Engine.calibrate_gamma(train_start, train_end) first")
+        return self.gamma
+
+    def calibrate_gamma(self, train_start, train_end) -> float:
+        """gamma of the derived risky-share rule: mean d* over the weekly dates of the training
+        part equals d0 of the profile; fixed afterwards."""
+        days = self.inp.market.index
+        cases = []
+        for t in weekly_dates(days, train_start, train_end):
+            der = self.derived_at(t)
+            if der["moments"] is not None:
+                cases.append((self.macro_at(t)["rec_prob"], der["moments"], der["r_kzt"]))
+        self.gamma = integration.calibrate_gamma(self.profile.base_risky_share, cases, self.profile)
+        prof = self.profile
+        mean_d = float(np.mean([integration.derived_risk_budget(p, m, r, self.gamma, prof) for p, m, r in cases]))
+        self.calibration = {"gamma": self.gamma, "n_dates": len(cases), "train_start": str(pd.Timestamp(train_start).date()),
+                            "train_end": str(pd.Timestamp(train_end).date()), "mean_d_train": mean_d,
+                            "attained": integration.calibration_attainable(prof.base_risky_share, cases, prof, self.gamma),
+                            "share_positive_premium": float(np.mean([integration.mixture_moments(p, m)[0] > r
+                                                                     for p, m, r in cases]))}
+        self.log(f"  gamma ({prof.key}) = {self.gamma:.3f} from {len(cases)} weekly dates "
+                 f"{pd.Timestamp(train_start):%Y-%m-%d} – {pd.Timestamp(train_end):%Y-%m-%d}; mean d* {mean_d:.2f} "
+                 f"(target {prof.base_risky_share:.2f}{'' if self.calibration['attained'] else ', NOT attainable'})")
+        return self.gamma
+
     # --- one decision
     def decide(self, t, cfg: Config) -> dict:
         n = self.inp.prices.shape[1]
         out = {"date": t}
         if cfg.d_fixed is not None:
             d = cfg.d_fixed
+        elif cfg.macro and self.rules_mode == "derived":
+            m, der = self.macro_at(t), self.derived_at(t)
+            if der["moments"] is None:
+                d = self.profile.base_risky_share
+            else:
+                d = integration.derived_risk_budget(m["rec_prob"], der["moments"], der["r_kzt"], self._gamma(),
+                                                    self.profile)
+            out |= {"rec_prob": m["rec_prob"]}
         elif cfg.macro:
             m = self.macro_at(t)
             d, _ = integration.risk_budget(self.profile, m["rec_prob"], "base", m["phase"], m["growth_next"], self.rules)
             out |= {k: m[k] for k in ("rec_prob", "phase", "growth_next")}
         else:
             d = self.profile.base_risky_share
-        if cfg.fx:
+        if cfg.fx and self.rules_mode == "derived":
+            der = self.derived_at(t)
+            h = integration.derived_fx_hedge(d, der["m"], der["cov_e_delta"], der["var_delta"], self._gamma(),
+                                             self.rules.hedge_max)
+            out |= {"m": der["m"], "e_delta": der["e_delta"]}
+        elif cfg.fx:
             r = self.fx_at(t)
             h = integration.fx_hedge(r, self.rules)
             out["fx_risk"] = r
@@ -430,9 +507,14 @@ def main(argv=None) -> int:
     p.add_argument("--tag", default=None)
     p.add_argument("--out", default=str(Path(__file__).resolve().parents[1] / "docs" / "results"))
     p.add_argument("--no-cache", action="store_true")
+    p.add_argument("--rules", default="expert", choices=["expert", "derived"],
+                   help="integration rules: expert (5)-(6) of the article or derived d*, h*")
+    p.add_argument("--train-start", default="2016-04-01",
+                   help="derived rules: start of the gamma calibration (first Module I vintage with a test year: 2015)")
     a = p.parse_args(argv)
     tickers = "all" if a.tickers == "all" else a.tickers.split(",")
-    tag = a.tag or ("table5" if a.modules == "12" else "table4") + ("_raw" if a.no_corporate_actions else "")
+    tag = a.tag or (("table5" if a.modules == "12" else "table4") + ("_raw" if a.no_corporate_actions else "")
+                    + ("_derived" if a.rules == "derived" else ""))
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     t_all = time.perf_counter()
@@ -442,7 +524,10 @@ def main(argv=None) -> int:
     print(f"Inputs: {inp.source}\n  universe {list(inp.prices.columns)}, prices {inp.prices.index.min():%Y-%m-%d} – "
           f"{inp.prices.index.max():%Y-%m-%d}, run {pd.Timestamp(a.start):%Y-%m-%d} – {pd.Timestamp(end):%Y-%m-%d}")
     configs = TABLE4 if a.modules == "1234" else TABLE5
-    engine = Engine(inp, a.profile, a.start, end, need_m4=a.modules == "1234", use_cache=not a.no_cache)
+    engine = Engine(inp, a.profile, a.start, end, need_m4=a.modules == "1234", use_cache=not a.no_cache,
+                    rules_mode=a.rules)
+    if a.rules == "derived":
+        engine.calibrate_gamma(a.train_start, pd.Timestamp(a.start) - pd.Timedelta(days=1))
     rets = asset_returns(inp)
     reference = "Full DSS" if a.modules == "1234" else "EW + KZT"
     table, daily, logs = run_table(engine, configs, rets, a.tc, reference)
@@ -460,7 +545,8 @@ def main(argv=None) -> int:
             "end": str(daily.index.max().date()), "n_days": table.attrs["n_days"], "block": table.attrs["block"],
             "n_boot": table.attrs["n_boot"], "mean_base_rate": table.attrs["mean_base_rate"],
             "n_rebalancing": len(engine.rebal), "tc_bps": a.tc, "corporate_actions": not a.no_corporate_actions,
-            "ic_ensemble": getattr(engine, "ic", np.nan), "source": inp.source}
+            "ic_ensemble": getattr(engine, "ic", np.nan), "source": inp.source, "rules": a.rules,
+            "gamma": engine.gamma if engine.gamma is not None else np.nan}
 
     if a.sensitivity:
         print("\nSensitivity of the integration coefficients (full DSS):")
