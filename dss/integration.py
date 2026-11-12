@@ -275,3 +275,101 @@ def sensitivity_analysis(profile: config.InvestorProfile, rec_prob: float, scena
                                 index=pd.Index(list(now), name="Свойство"))
     return {"coefficients": coefficients, "risk_grid": risk_grid, "hedge_grid": hedge_grid,
             "monotonicity": monotonicity}
+
+
+# ----------------------------------------------------------------------------- derived rules (rules="derived")
+# The expert rules (5)-(6) above stay the default (rules="expert"). The derived rules follow from
+# mean-variance utility E[R] - gamma/2 Var[R] of the whole portfolio in tenge
+#     R = d R_E + (1 - d) [(1 - h) r_KZT + h (r_USD + delta)],
+# where R_E is the risky part and delta the change of USD/KZT. Setting the derivatives to zero:
+#     d* = (mu(pi) - r_KZT) / (gamma sigma^2(pi))                       (with h = 0)
+#     h* = (m / gamma - d Cov(R_E, delta)) / ((1 - d) sigma^2_delta),  m = r_USD + E[delta] - r_KZT,
+# both clipped to the bounds of the profile. mu(pi), sigma^2(pi) are the moments of the two-regime
+# mixture with weight pi = P(adverse regime) from Module I; the regime moments are estimated only
+# from returns dated before the decision. gamma is calibrated once per profile on the training part
+# (mean d* = d0) and then fixed. No phase-of-cycle multiplier.
+
+@dataclass(frozen=True)
+class RegimeMoments:
+    """Annualised mean and variance of the risky part in the normal (N) and adverse (R) regimes."""
+    mu_n: float
+    var_n: float
+    mu_r: float
+    var_r: float
+    n_n: int = 0
+    n_r: int = 0
+
+
+def regime_moments(returns: pd.Series, adverse: pd.Series, min_days: int = 60) -> RegimeMoments | None:
+    """Moments of daily ``returns`` split by the boolean ``adverse`` (same index, annualised x252);
+    None when one of the regimes has fewer than ``min_days`` observations."""
+    r = returns.dropna()
+    a = adverse.reindex(r.index)
+    ok = a.notna()
+    r, a = r[ok], a[ok].astype(bool)
+    rn, rr = r[~a], r[a]
+    if len(rn) < min_days or len(rr) < min_days:
+        return None
+    return RegimeMoments(float(rn.mean() * 252), float(rn.var(ddof=1) * 252),
+                         float(rr.mean() * 252), float(rr.var(ddof=1) * 252), len(rn), len(rr))
+
+
+def mixture_moments(pi: float, m: RegimeMoments) -> tuple[float, float]:
+    """Mean and variance of the two-regime mixture with P(adverse) = pi."""
+    mu = (1 - pi) * m.mu_n + pi * m.mu_r
+    var = (1 - pi) * m.var_n + pi * m.var_r + pi * (1 - pi) * (m.mu_n - m.mu_r) ** 2
+    return float(mu), float(var)
+
+
+def derived_risk_budget(pi: float, moments: RegimeMoments, r_kzt: float, gamma: float,
+                        profile: config.InvestorProfile) -> float:
+    mu, var = mixture_moments(pi, moments)
+    d = (mu - r_kzt) / (gamma * var) if var > 0 else profile.min_risky_share
+    return float(np.clip(d, profile.min_risky_share, profile.max_risky_share))
+
+
+def derived_fx_hedge(d: float, m: float, cov_e_delta: float, var_delta: float, gamma: float,
+                     h_max: float = config.RULES.hedge_max) -> float:
+    """h* of the defensive part; 0 when there is no defensive part or no FX variance."""
+    if d >= 1 - 1e-9 or var_delta <= 0:
+        return 0.0
+    h = (m / gamma - d * cov_e_delta) / ((1 - d) * var_delta)
+    return float(np.clip(h, 0.0, h_max))
+
+
+def calibrate_gamma(target_d0: float, cases, profile: config.InvestorProfile, lo: float = 0.05,
+                    hi: float = 500.0, tol: float = 1e-6) -> float:
+    """gamma such that the mean clipped d* over ``cases`` [(pi, moments, r_kzt), ...] equals ``target_d0``.
+
+    For a case with a positive expected excess return d* falls with gamma from d_max to d_min; with a
+    negative one d* = d_min for every gamma > 0. The mean is therefore non-increasing in gamma and
+    lies between d_min and (share of positive cases) d_max + (rest) d_min: when ``target_d0`` is above
+    that, no gamma attains it and the lower bound ``lo`` is returned (see
+    :func:`calibration_attainable`)."""
+    cases = list(cases)
+    if not cases:
+        raise ValueError("no training cases for the calibration of gamma")
+
+    def mean_d(g):
+        return float(np.mean([derived_risk_budget(p, m, r, g, profile) for p, m, r in cases]))
+    if mean_d(lo) <= target_d0:
+        return lo
+    if mean_d(hi) >= target_d0:
+        return hi
+    a, b = np.log(lo), np.log(hi)
+    for _ in range(200):
+        c = 0.5 * (a + b)
+        if mean_d(np.exp(c)) > target_d0:
+            a = c
+        else:
+            b = c
+        if b - a < tol:
+            break
+    return float(np.exp(0.5 * (a + b)))
+
+
+def calibration_attainable(target_d0: float, cases, profile: config.InvestorProfile, gamma: float,
+                           tol: float = 1e-3) -> bool:
+    """Whether the mean d* at ``gamma`` matches ``target_d0`` (False when calibrate_gamma hit a bound)."""
+    md = float(np.mean([derived_risk_budget(p, m, r, gamma, profile) for p, m, r in cases]))
+    return abs(md - target_d0) < tol
