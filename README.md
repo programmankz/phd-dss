@@ -73,6 +73,21 @@ python scripts/timing.py             # время работы модулей и
 python -m dss.cli export -o tables.xlsx   # все таблицы модулей в Excel (нужен openpyxl; иначе -o tables.zip — CSV)
 ```
 
+Исследовательские скрипты (ноябрь 2026 г., по замечаниям семинара; отчёты — в `docs/`):
+
+```bash
+python scripts/end_to_end.py --rules derived          # таблица 4 с выведенными правилами d*, h* вместо экспертных
+python scripts/dividends_impact.py   # таблицы 4–5: тег v1.0-paper против данных со всеми дивидендами → docs/e2e_dividends_impact.md
+python scripts/ablation.py           # 16 конфигураций модулей и значения Шепли → docs/ablation.md
+python scripts/baselines.py          # 1/N, мин. дисперсия, ERC, HRP, Марковиц, Блэк–Литтерман в том же бэктесте → docs/baselines.md
+python scripts/derived_rules.py      # экспертные против выведенных правил интеграции → docs/derived_rules.md
+python scripts/reproduce_iskakov.py  # постановка диплома Искакова (21 день, ElasticNet/RF/XGBoost), тест PT → docs/reproduction_iskakov.md
+python scripts/clusters_kase.py      # меры сходства, ликвидность, устойчивость кластеров (ARI) → docs/clusters_kase.md
+python scripts/kase_profile.py       # доходность – риск – ликвидность рынка KASE → docs/kase_profile.md
+python scripts/build_dataset.py      # набор KZ-MacroFin и классификаторы режимов → data_build/kz_macrofin.csv, docs/dataset.md
+python scripts/experiment_2026_11.py # предрегистрированный эксперимент (docs/preregistration.md) → docs/results_2026_11.md
+```
+
 ## Тесты и проверка стиля
 
 ```bash
@@ -114,11 +129,15 @@ dss/
   signals.py       Модуль IV, этап A (прогнозы → ранговые сигналы)
   portfolio.py     Модуль IV, этап B (оптимизация, бэктест)
   significance.py  Модуль IV: значимость (бутстреп Шарпа, Diebold–Mariano)
-  integration.py   модуль интеграции (бюджет риска, хедж, лимиты, веса; анализ чувствительности правил)
+  integration.py   модуль интеграции (бюджет риска, хедж, лимиты, веса; анализ чувствительности правил;
+                   выведенные правила d*, h*)
+  evaluation.py    вклад модулей: 16 конфигураций, значения Шепли, парные бутстреп-тесты
+  baselines.py     базовые стратегии (1/N, мин. дисперсия, ERC, HRP, Марковиц, Блэк–Литтерман)
+  dataset.py       набор KZ-MacroFin и классификаторы режимов
   pipeline.py      оркестрация и кэш
   plots.py, report.py, cli.py
   export.py        выгрузка всех таблиц в Excel (.xlsx) или ZIP с CSV
-webapp/            Flask-интерфейс (6 страниц)
+webapp/            Flask-интерфейс (7 страниц, включая «Качество и вклад модулей»)
 tests/             test_core — научные инварианты (нет утечки, ограничения, табл. 9–10);
                    test_loaders — проверка CSV; test_analysis — правила интеграции и тесты значимости;
                    test_system — конвейер целиком, НФТ-01 и веб-экраны; test_reproduce — воспроизведение статей;
