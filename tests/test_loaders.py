@@ -457,3 +457,30 @@ def test_cbar_bulletin_converts_old_manat():
     assert d == pd.Timestamp("2000-01-03") and abs(v - 0.8736) < 1e-12
     d, v = loaders.parse_cbar(xml.replace(b"03.01.2000", b"04.01.2016").replace(b"4368", b"1.5594"))
     assert v == 1.5594
+
+
+def test_taldau_kei_keeps_the_republic_row_in_bn_kzt():
+    records = [{"terms": [1], "termNames": ["Г.АЛМАТЫ"], "periods": [{"date": "31.01.2021", "value": "5"}]},
+               {"terms": [2], "termNames": ["РЕСПУБЛИКА КАЗАХСТАН"],
+                "periods": [{"name": "Февраль 2021 г.", "date": "28.02.2021", "value": "4936200000000"},
+                            {"name": "Январь 2021 г.", "date": "31.01.2021", "value": "4651700000000"}]}]
+    s = loaders.parse_taldau_kei(records)
+    assert s.to_dict() == {pd.Period("2021-01", "M"): 4651.7, pd.Period("2021-02", "M"): 4936.2}
+
+
+def test_clp_years_are_merged_and_failed_years_skipped():
+    import json
+    import urllib.error
+
+    def fake_get(url, timeout=30, **kw):
+        if url.endswith("/2001"):
+            raise urllib.error.URLError("timeout")
+        return json.dumps({"codigo": "dolar", "serie": [{"fecha": "2000-01-04T03:00:00.000Z", "valor": 520.1},
+                                                         {"fecha": "2000-01-03T03:00:00.000Z", "valor": 518.0}]}).encode()
+
+    real_get, loaders._get = loaders._get, fake_get
+    try:
+        s = loaders.fetch_clp(2000, 2001)
+    finally:
+        loaders._get = real_get
+    assert list(s.index.strftime("%Y-%m-%d")) == ["2000-01-03", "2000-01-04"] and s.iloc[0] == 518.0
