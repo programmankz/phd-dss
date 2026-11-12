@@ -84,7 +84,10 @@ def fx_hedge(fx_risk: float, rules: config.IntegrationRules = config.RULES) -> f
 
 
 def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.Settings,
-           sectors: pd.Series | None = None, rules: config.IntegrationRules = config.RULES) -> Decision:
+           sectors: pd.Series | None = None, rules: config.IntegrationRules = config.RULES,
+           derived: dict | None = None) -> Decision:
+    """One decision. With ``derived`` (keys moments, r_kzt, m, cov_e_delta, var_delta, gamma; see
+    :func:`dss.pipeline.derived_inputs`) the risky share and the hedge follow the derived rules d*, h*."""
     profile = config.PROFILES[settings.profile]
     sc = settings.scenario
     growth = macro.scenario_path(sc)
@@ -93,6 +96,17 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
 
     # ---- Module I -> risk budget
     risky, trail = risk_budget(profile, macro.recession_prob, sc, macro.phase, g_next, rules)
+    if derived is not None and derived.get("moments") is not None:
+        mom, g = derived["moments"], derived["gamma"]
+        mu, var = mixture_moments(macro.recession_prob, mom)
+        risky = derived_risk_budget(macro.recession_prob, mom, derived["r_kzt"], g, profile)
+        trail = [f"выведенное правило: d* = clip((μ(π) − r_KZT) / (γ·σ²(π))), γ = {num(g, 3)}",
+                 f"μ(π) = {pct(mu, 1)} (рост {pct(mom.mu_n, 1)}, неблагоприятный режим {pct(mom.mu_r, 1)}), "
+                 f"σ(π) = {pct(np.sqrt(var), 1)}, r_KZT = {pct(derived['r_kzt'], 1)}",
+                 "фаза цикла и сценарий не используются"]
+    elif derived is not None:
+        warns.append("Выведенные правила: недостаточно истории для оценки режимов, использованы экспертные правила.")
+        derived = None
     steps.append({"module": "I", "title": "Макропрогноз → бюджет риска",
                   "facts": [f"P(рецессии в {growth.index[0]} г.) = {pct(macro.recession_prob, 0)} (Gradient Boosting)",
                             f"прогноз роста ВВП {growth.index[0]} г. = {num(g_next, 2)}% (ARIMA{macro.extra['arima_order']}, сценарий {config.SCENARIOS[sc]['label']})",
@@ -101,11 +115,17 @@ def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.
 
     # ---- Module II -> safe part and FX hedge
     usd = fx_hedge(fx.fx_risk, rules)
+    fx_trail = []
+    if derived is not None:
+        usd = derived_fx_hedge(risky, derived["m"], derived["cov_e_delta"], derived["var_delta"], derived["gamma"],
+                               rules.hedge_max)
+        fx_trail = [f"выведенное правило: h* = clip((m/γ − d·Cov(R_E, δ)) / ((1 − d)·σ²_δ)), "
+                    f"m = r_USD + E[δ] − r_KZT = {pct(derived['m'], 1)}, σ_δ = {pct(np.sqrt(derived['var_delta']), 1)}"]
     steps.append({"module": "II", "title": "Валютный риск → хедж безрисковой части",
                   "facts": [f"индекс валютного риска = {num(fx.fx_risk, 2)} (режим: {fx.regime.lower()})",
                             f"ожидаемое ослабление тенге к USD ≈ {pct(fx.exp_depreciation, 1)} в год",
                             f"USD, EUR, CNY — один фактор: PC1 объясняет {pct(fx.pc1_share, 0)} дисперсии"],
-                  "result": f"в USD-инструментах {pct(usd, 0)} безрисковой части", "trail": []})
+                  "result": f"в USD-инструментах {pct(usd, 0)} безрисковой части", "trail": fx_trail})
     if fx.fx_risk >= rules.fx_risk_warn:
         warns.append("Высокий валютный риск: рассмотрите увеличение валютного хеджа сверх модельного.")
 
@@ -275,3 +295,101 @@ def sensitivity_analysis(profile: config.InvestorProfile, rec_prob: float, scena
                                 index=pd.Index(list(now), name="Свойство"))
     return {"coefficients": coefficients, "risk_grid": risk_grid, "hedge_grid": hedge_grid,
             "monotonicity": monotonicity}
+
+
+# ----------------------------------------------------------------------------- derived rules (rules="derived")
+# The expert rules (5)-(6) above stay the default (rules="expert"). The derived rules follow from
+# mean-variance utility E[R] - gamma/2 Var[R] of the whole portfolio in tenge
+#     R = d R_E + (1 - d) [(1 - h) r_KZT + h (r_USD + delta)],
+# where R_E is the risky part and delta the change of USD/KZT. Setting the derivatives to zero:
+#     d* = (mu(pi) - r_KZT) / (gamma sigma^2(pi))                       (with h = 0)
+#     h* = (m / gamma - d Cov(R_E, delta)) / ((1 - d) sigma^2_delta),  m = r_USD + E[delta] - r_KZT,
+# both clipped to the bounds of the profile. mu(pi), sigma^2(pi) are the moments of the two-regime
+# mixture with weight pi = P(adverse regime) from Module I; the regime moments are estimated only
+# from returns dated before the decision. gamma is calibrated once per profile on the training part
+# (mean d* = d0) and then fixed. No phase-of-cycle multiplier.
+
+@dataclass(frozen=True)
+class RegimeMoments:
+    """Annualised mean and variance of the risky part in the normal (N) and adverse (R) regimes."""
+    mu_n: float
+    var_n: float
+    mu_r: float
+    var_r: float
+    n_n: int = 0
+    n_r: int = 0
+
+
+def regime_moments(returns: pd.Series, adverse: pd.Series, min_days: int = 60) -> RegimeMoments | None:
+    """Moments of daily ``returns`` split by the boolean ``adverse`` (same index, annualised x252);
+    None when one of the regimes has fewer than ``min_days`` observations."""
+    r = returns.dropna()
+    a = adverse.reindex(r.index)
+    ok = a.notna()
+    r, a = r[ok], a[ok].astype(bool)
+    rn, rr = r[~a], r[a]
+    if len(rn) < min_days or len(rr) < min_days:
+        return None
+    return RegimeMoments(float(rn.mean() * 252), float(rn.var(ddof=1) * 252),
+                         float(rr.mean() * 252), float(rr.var(ddof=1) * 252), len(rn), len(rr))
+
+
+def mixture_moments(pi: float, m: RegimeMoments) -> tuple[float, float]:
+    """Mean and variance of the two-regime mixture with P(adverse) = pi."""
+    mu = (1 - pi) * m.mu_n + pi * m.mu_r
+    var = (1 - pi) * m.var_n + pi * m.var_r + pi * (1 - pi) * (m.mu_n - m.mu_r) ** 2
+    return float(mu), float(var)
+
+
+def derived_risk_budget(pi: float, moments: RegimeMoments, r_kzt: float, gamma: float,
+                        profile: config.InvestorProfile) -> float:
+    mu, var = mixture_moments(pi, moments)
+    d = (mu - r_kzt) / (gamma * var) if var > 0 else profile.min_risky_share
+    return float(np.clip(d, profile.min_risky_share, profile.max_risky_share))
+
+
+def derived_fx_hedge(d: float, m: float, cov_e_delta: float, var_delta: float, gamma: float,
+                     h_max: float = config.RULES.hedge_max) -> float:
+    """h* of the defensive part; 0 when there is no defensive part or no FX variance."""
+    if d >= 1 - 1e-9 or var_delta <= 0:
+        return 0.0
+    h = (m / gamma - d * cov_e_delta) / ((1 - d) * var_delta)
+    return float(np.clip(h, 0.0, h_max))
+
+
+def calibrate_gamma(target_d0: float, cases, profile: config.InvestorProfile, lo: float = 0.05,
+                    hi: float = 500.0, tol: float = 1e-6) -> float:
+    """gamma such that the mean clipped d* over ``cases`` [(pi, moments, r_kzt), ...] equals ``target_d0``.
+
+    For a case with a positive expected excess return d* falls with gamma from d_max to d_min; with a
+    negative one d* = d_min for every gamma > 0. The mean is therefore non-increasing in gamma and
+    lies between d_min and (share of positive cases) d_max + (rest) d_min: when ``target_d0`` is above
+    that, no gamma attains it and the lower bound ``lo`` is returned (see
+    :func:`calibration_attainable`)."""
+    cases = list(cases)
+    if not cases:
+        raise ValueError("no training cases for the calibration of gamma")
+
+    def mean_d(g):
+        return float(np.mean([derived_risk_budget(p, m, r, g, profile) for p, m, r in cases]))
+    if mean_d(lo) <= target_d0:
+        return lo
+    if mean_d(hi) >= target_d0:
+        return hi
+    a, b = np.log(lo), np.log(hi)
+    for _ in range(200):
+        c = 0.5 * (a + b)
+        if mean_d(np.exp(c)) > target_d0:
+            a = c
+        else:
+            b = c
+        if b - a < tol:
+            break
+    return float(np.exp(0.5 * (a + b)))
+
+
+def calibration_attainable(target_d0: float, cases, profile: config.InvestorProfile, gamma: float,
+                           tol: float = 1e-3) -> bool:
+    """Whether the mean d* at ``gamma`` matches ``target_d0`` (False when calibrate_gamma hit a bound)."""
+    md = float(np.mean([derived_risk_budget(p, m, r, gamma, profile) for p, m, r in cases]))
+    return abs(md - target_d0) < tol

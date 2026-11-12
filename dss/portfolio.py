@@ -88,10 +88,18 @@ def _solve(obj, n, w_max, groups, U, cap) -> tuple[np.ndarray, bool]:
     return w / w.sum(), bool(ok)
 
 
-def max_signal_to_risk(s, cov, w_max=1.0, groups=None, U=None, cluster_cap=None, return_ok=False):
-    """Weights maximising w's / sqrt(w'Sigma w); with ``return_ok`` also whether SLSQP converged."""
+def max_signal_to_risk(s, cov, w_max=1.0, groups=None, U=None, cluster_cap=None, return_ok=False,
+                       w_prev=None, kappa: float = 0.0):
+    """Weights maximising w's / sqrt(w'Sigma w) - kappa ||w - w_prev||_1; with ``return_ok`` also
+    whether SLSQP converged. The L1 norm is smoothed (sqrt(x^2 + 1e-10)) for SLSQP; kappa = 0 or
+    ``w_prev`` = None gives the objective of [A4]."""
     s, cov = np.asarray(s, float), np.asarray(cov, float)
-    obj = lambda w: -(w @ s) / np.sqrt(max(w @ cov @ w, 1e-12))
+    if kappa > 0 and w_prev is not None:
+        wp = np.asarray(w_prev, float)
+        obj = lambda w: (-(w @ s) / np.sqrt(max(w @ cov @ w, 1e-12))          # noqa: E731
+                         + kappa * np.sqrt((w - wp) ** 2 + 1e-10).sum())
+    else:
+        obj = lambda w: -(w @ s) / np.sqrt(max(w @ cov @ w, 1e-12))            # noqa: E731
     w, ok = _solve(obj, len(s), w_max, groups, U, cluster_cap)
     return (w, ok) if return_ok else w
 
@@ -114,6 +122,30 @@ def signal_weighted(s, w_max=1.0):
         w[over] = w_max
         free = ~over & (w < w_max)
         w[free] += excess * w[free] / w[free].sum() if w[free].sum() > 0 else 0
+    return w / w.sum()
+
+
+def cluster_equal_weights(groups, w_max: float = 1.0, cap: float | None = None) -> np.ndarray:
+    """Equal weight per cluster, split equally inside the cluster (Module III without signals),
+    within the per-asset cap and the cluster cap: the feasible start of the optimiser after
+    :func:`feasible_limits`. With singleton clusters it is the equal-weighted portfolio."""
+    g = np.asarray(groups)
+    labs, counts = np.unique(g, return_counts=True)
+    w_eff, cap_eff, _ = feasible_limits(g, w_max, cap if cap is not None else 1.0)
+    allowed = np.minimum(np.minimum(cap_eff, 1.0 / len(labs)), counts * w_eff)
+    w = np.zeros(len(g))
+    for lab, cnt, a in zip(labs, counts, allowed):
+        w[g == lab] = a / cnt
+    # spread what the caps cut off over the clusters that still have room (water-filling)
+    room = np.array([min(cap_eff, cnt * w_eff) for cnt in counts]) - allowed
+    for _ in range(len(labs)):
+        rest = 1.0 - w.sum()
+        if rest <= 1e-12 or room.sum() <= 1e-12:
+            break
+        add = np.minimum(room, rest * room / room.sum())
+        for lab, cnt, x in zip(labs, counts, add):
+            w[g == lab] += x / cnt
+        room = room - add
     return w / w.sum()
 
 

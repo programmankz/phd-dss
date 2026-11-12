@@ -20,7 +20,7 @@ from test_loaders import data_dir, prices_csv  # noqa: E402
 from dss import config, pipeline  # noqa: E402
 
 _CACHE = Path(tempfile.mkdtemp(prefix="dss-test-cache-"))
-PAGES = ["/", "/macro", "/fx", "/clusters", "/signals", "/data", "/report"]
+PAGES = ["/", "/macro", "/fx", "/clusters", "/signals", "/data", "/quality", "/report"]
 
 
 @contextmanager
@@ -230,3 +230,15 @@ def test_strict_limits_policy_refuses_infeasible_profile():
     assert any("Строгая политика лимитов" in w for w in d.warnings)
     assert d.exp_vol == 0.0 and d.steps[3]["result"].startswith("рисковая часть не распределена")
     assert "Строгая политика лимитов" in page and 'value="strict" selected' in page
+
+
+def test_web_quality_page_and_rules_switch():
+    c = _client()
+    with isolated():
+        body = c.get("/quality").get_data(as_text=True)
+        assert "Статус сигнала Модуля IV" in body and "Traceback" not in body
+        home = c.get("/?rules=derived").get_data(as_text=True)
+        assert 'value="derived" selected' in home
+        # demo data: the derived rules need real KASE data and fall back to the expert rules with a message
+        assert "Выведенные правила требуют реальных данных" in home
+        assert c.get("/?rules=bogus").status_code == 200

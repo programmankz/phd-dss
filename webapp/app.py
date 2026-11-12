@@ -44,7 +44,10 @@ def settings_from_request() -> tuple[config.Settings, dict]:
         "protocol": a.get("protocol", "walk_forward"),
         "caps": a.get("caps", "1"),
         "limits": a.get("limits", "relax"),
+        "rules": a.get("rules", "expert"),
     }
+    if raw["rules"] not in ("expert", "derived"):
+        raw["rules"] = "expert"
     if raw["profile"] not in config.PROFILES:
         raw["profile"] = "moderate"
     if raw["scenario"] not in config.SCENARIOS:
@@ -66,7 +69,7 @@ def settings_from_request() -> tuple[config.Settings, dict]:
                          models=MODEL_SETS[raw["models"]], rebalance=raw["rebalance"], tc_bps=tc,
                          cov_method=raw["cov"] if raw["cov"] in ("sample", "ledoit_wolf") else "ledoit_wolf",
                          use_fuzzy_caps=raw["fuzzy"] == "1", protocol=raw["protocol"],
-                         backtest_caps=raw["caps"] == "1", limits_policy=raw["limits"])
+                         backtest_caps=raw["caps"] == "1", limits_policy=raw["limits"], rules=raw["rules"])
     return st, raw
 
 
@@ -178,6 +181,61 @@ def signals_page():
     c["img_ic"] = plots.model_ic(r.signals.metrics)
     c["sig_sharpe"], c["sig_dm"] = pipeline.significance_tables(r, fmt=lambda v: fmt(v, "num", 2))
     return render_template("signals.html", **c)
+
+
+RESULTS = Path(__file__).resolve().parents[1] / "docs" / "results"
+MODULE_RU = {"I": "I — макроправило d", "II": "II — валютное правило h", "III": "III — кластерные лимиты",
+             "IV": "IV — сигналы"}
+METRIC_RU = {"sharpe": "Шарп", "max_drawdown": "Макс. просадка"}
+
+
+def _csv(name: str) -> pd.DataFrame | None:
+    try:
+        return pd.read_csv(RESULTS / name)
+    except (OSError, ValueError):
+        return None
+
+
+@app.route("/quality")
+def quality_page():
+    c = context("quality")
+    r = c["r"]
+    from dss import significance, signals
+    # signal admission on the current data: t_IC over the last 52 weekly dates
+    realised = np.log(r.prices).diff().shift(-1)
+    ic = signals.daily_ic(r.signals.smoothed, realised).dropna()
+    weekly = ic.groupby(ic.index.to_period("W")).head(1)
+    last = weekly.iloc[-53:-1] if len(weekly) > 1 else weekly
+    t_ic, n_ic = significance.ic_t_stat(last.to_numpy())
+    c["gate"] = {"t_ic": t_ic, "n": n_ic, "admitted": bool(np.isfinite(t_ic) and n_ic >= 26 and t_ic > 1.645),
+                 "since": last.index.min(), "until": last.index.max()}
+    m1 = r.macro.classification.copy()
+    c["m1"] = m1.rename(columns={"accuracy": "Точность", "roc_auc": "ROC-AUC", "recall_recession": "Полнота (рецессия)",
+                                 "f1_recession": "F1 (рецессия)"})
+    c["m4"] = r.signals.metrics.rename(columns={"hit_rate": "Доля верных знаков", "IC_t": "t(IC)"})
+    pt = _csv("module4_pt.csv")
+    if pt is not None:
+        pt = pt.assign(test=pt["test"].map({"forecast sign vs return sign": "знак прогноза",
+                                            "ensemble score vs relative return": "оценка ансамбля"}))
+        pt.index = [f"{h} дн., {t}" for h, t in zip(pt["horizon"], pt["test"])]
+        c["pt"] = pd.DataFrame({"Неперекр. набл.": pt["n_nonoverlap"].astype(int), "Точность": pt["hit_rate"],
+                                "p (неперекр.)": pt["p_nonoverlap"], "p (HAC)": pt["p_hac"]})
+    sh = _csv("abl_shapley.csv")
+    c["shapley"] = []
+    if sh is not None:
+        for sample, g in sh.groupby("sample", sort=False):
+            g = g[g["module"].isin(MODULE_RU)]
+            t = pd.DataFrame({"Показатель": g["metric"].map(lambda m: METRIC_RU.get(m, m.replace("return", "доходность"))),
+                              "φ": g["phi"], "95% ДИ, низ": g["ci_low"], "95% ДИ, верх": g["ci_high"]})
+            t.index = g["module"].map(MODULE_RU)
+            c["shapley"].append((sample, t))
+    tests = _csv("exp_2026_11_tests.csv")
+    if tests is not None:
+        tm = tests[tests["profile"] == "moderate"].set_index("hypothesis")
+        c["hyp"] = pd.DataFrame({"Оценка": tm["diff"].fillna(tm.get("diff_2020")), "95% ДИ, низ": tm["low"],
+                                 "95% ДИ, верх": tm["high"], "p (Холм)": tm["p_holm"],
+                                 "Итог": tm["confirmed"].map({True: "подтверждена", False: "не подтверждена"})})
+    return render_template("quality.html", **c)
 
 
 @app.route("/data")

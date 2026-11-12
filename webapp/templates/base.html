@@ -18,6 +18,7 @@
       <li><a href="/fx?{{ qs }}" class="{{ 'on' if page=='fx' }}"><span class="rn m2">II</span>Валютные риски</a></li>
       <li><a href="/clusters?{{ qs }}" class="{{ 'on' if page=='clusters' }}"><span class="rn m3">III</span>Кластеризация</a></li>
       <li><a href="/signals?{{ qs }}" class="{{ 'on' if page=='signals' }}"><span class="rn m4">IV</span>Сигналы и бэктест</a></li>
+      <li><a href="/quality?{{ qs }}" class="{{ 'on' if page=='quality' }}"><span class="rn mx">Σ</span>Качество и вклад модулей</a></li>
       <li class="sep" role="presentation"></li>
       <li><a href="/data?{{ qs }}" class="{{ 'on' if page=='data' }}"><span class="rn mx">≡</span>Данные</a></li>
       <li><a href="/report?{{ qs }}"><span class="rn mx">↓</span>Скачать отчёт</a></li>
@@ -55,6 +56,8 @@
         <select name="protocol">{% for k, p in config.PROTOCOLS.items() %}<option value="{{ k }}" {{ 'selected' if raw.protocol==k }}>{{ p.label }}</option>{% endfor %}</select></label>
       <label>Лимиты в бэктесте
         <select name="caps"><option value="1" {{ 'selected' if raw.caps=='1' }}>профиля и кластеров</option><option value="0" {{ 'selected' if raw.caps=='0' }}>только 0 ≤ w ≤ 1 (как в [A4])</option></select></label>
+      <label>Правила интеграции
+        <select name="rules"><option value="expert" {{ 'selected' if raw.rules=='expert' }}>экспертные (5)–(6), как в статье</option><option value="derived" {{ 'selected' if raw.rules=='derived' }}>выведенные d*, h*</option></select></label>
       <button class="btn" type="submit">Пересчитать</button>
       <a class="btn ghost" href="{{ request.path }}?{{ paper_qs }}" title="Одно разбиение 80/20, выборочная ковариация, ежедневная ребалансировка, без издержек и лимитов">Параметры статьи [A4]</a>
     </form>

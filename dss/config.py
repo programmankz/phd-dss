@@ -173,6 +173,7 @@ class Settings:
     protocol: str = "walk_forward"       # Module IV evaluation: "walk_forward" | "paper" (80/20)
     backtest_caps: bool = True           # False: only 0 <= w_i <= 1 in the backtest, as in [A4]
     limits_policy: str = "relax"         # infeasible profile limits: "relax" (portfolio.feasible_limits) | "strict" (refuse)
+    rules: str = "expert"                # integration rules: "expert" (5)-(6) | "derived" d*, h* (dss.integration)
     extra: dict = field(default_factory=dict)
 
     def __post_init__(self):
@@ -188,4 +189,4 @@ class Settings:
         return (self.profile, self.scenario, self.universe, tuple(self.models),
                 self.rebalance, float(self.tc_bps), self.cov_method,
                 bool(self.use_fuzzy_caps), float(self.risk_free), self.protocol, bool(self.backtest_caps),
-                self.limits_policy)
+                self.limits_policy, self.rules)
