@@ -83,6 +83,16 @@ def fx_hedge(fx_risk: float, rules: config.IntegrationRules = config.RULES) -> f
     return float(np.clip(rules.hedge_base + rules.hedge_slope * fx_risk, 0.0, rules.hedge_max))
 
 
+def conditional_fx_hedge(fx_risk: float, r_usd: float, r_kzt: float, e_delta: float,
+                         rules: config.IntegrationRules = config.RULES) -> float:
+    """Rule 2 applied only above the threshold of h*: the dollar share of the expert rule when the expected
+    excess return of the dollar m = r_usd + E[delta] - r_kzt is positive, otherwise 0. Off by default
+    (``Config.fx_rule == "conditional"`` in scripts/end_to_end.py)."""
+    if not np.isfinite(e_delta) or r_usd + e_delta - r_kzt <= 0:
+        return 0.0
+    return fx_hedge(fx_risk, rules)
+
+
 def decide(macro, fx, clusters, signals, prices: pd.DataFrame, settings: config.Settings,
            sectors: pd.Series | None = None, rules: config.IntegrationRules = config.RULES,
            derived: dict | None = None) -> Decision:

@@ -71,6 +71,7 @@ class Inputs:
     rates: pd.DataFrame         # calendar days x kzt, usd (fractions)
     source: str
     market: pd.Series | None = None   # daily equal-weighted return of all KASE stocks quoted that day
+    peers: pd.DataFrame | None = None   # calendar days x commodity currencies, units per USD (conditional FX rule)
 
 
 def load_inputs(tickers, corporate_actions: bool = True) -> Inputs:
@@ -91,7 +92,9 @@ def load_inputs(tickers, corporate_actions: bool = True) -> Inputs:
         raise SystemExit(f"ставки: {rlabel}")
     usd = fx_rates["USD"].reindex(prices.index, method="ffill")
     market = px.pct_change(fill_method=None).where(px.notna() & px.shift(1).notna()).mean(axis=1).dropna()
-    return Inputs(prices, usd, fx_rates, loaders.load_gdp().frame, rates, f"{label}; {rlabel}", market)
+    peer_path = loaders.data_dir() / "fx_commodity_panel.csv"
+    peers = pd.read_csv(peer_path, index_col=0, parse_dates=True) if peer_path.exists() else None
+    return Inputs(prices, usd, fx_rates, loaders.load_gdp().frame, rates, f"{label}; {rlabel}", market, peers)
 
 
 def perturb_inputs(inp: Inputs, date: str, seed: int = 7) -> Inputs:
@@ -107,7 +110,14 @@ def perturb_inputs(inp: Inputs, date: str, seed: int = 7) -> Inputs:
     gdp = inp.gdp.copy()
     last = gdp.columns.max()
     gdp[last] = rng.normal(0, 5, len(gdp))
-    return Inputs(px, fxr["USD"].reindex(px.index, method="ffill"), fxr, gdp, inp.rates, inp.source + "; perturbed")
+    peers = inp.peers
+    if peers is not None:
+        peers = peers.copy()
+        m = peers.index >= d
+        base = peers.loc[~m].ffill().iloc[-1].to_numpy()
+        peers.loc[m] = base * np.exp(np.cumsum(rng.normal(0, 0.02, (m.sum(), peers.shape[1])), axis=0))
+    return Inputs(px, fxr["USD"].reindex(px.index, method="ffill"), fxr, gdp, inp.rates, inp.source + "; perturbed",
+                  inp.market, peers)
 
 
 # ----------------------------------------------------------------------------- module inputs as of t
@@ -154,6 +164,7 @@ class Config:
     gate_fallback: str = "min_variance"   # risk-based weights when the signal is not admitted (or "hrp")
     kappa: float = 0.0             # turnover penalty of the optimiser, kappa ||w - w_prev||_1
     weights: str | None = None     # baseline rule of the risky part (dss.baselines), replaces m4/clusters
+    fx_rule: str = "expert"       # "conditional": rule (6) only when r_usd + E[delta] - r_kzt > 0 (see Engine.cond_at)
     clusters: bool | None = None   # Module III cluster limits; None: on together with m4 (as in Tables 4-5).
                                    # m4 off, clusters on: equal weights per cluster, capped (cluster_equal_weights);
                                    # m4 on, clusters off: optimiser (4) with the per-asset cap only
@@ -185,6 +196,7 @@ class Engine:
         self.rules_mode, self.gamma, self._derived = rules_mode, gamma, {}
         self._prev_risky: dict = {}
         self.cluster_distance, self.cluster_volumes = "features", None   # Module III variant (section 6)
+        self.peer_window_days, self._cond = fx.PEER_WINDOW_DAYS, {}
         self.use_cache = use_cache
         self.days = inp.prices.index
         self.start, self.end = pd.Timestamp(start), pd.Timestamp(end)
@@ -219,6 +231,22 @@ class Engine:
         if t not in self._fx:
             self._fx[t] = fx.risk_signal(self.inp.fx_rates.loc[:t].dropna())[1]
         return self._fx[t]
+
+    def cond_at(self, t) -> dict:
+        """Inputs of the conditional FX rule known at t: E[delta] is the larger of the historical drift of
+        USD/KZT (fx.expected_depreciation) and the depreciation of commodity currencies that the tenge has
+        not followed (fx.peer_gap); m = r_usd + E[delta] - r_kzt."""
+        if t not in self._cond:
+            if self.inp.peers is None:
+                raise RuntimeError("conditional FX rule needs data/fx_commodity_panel.csv")
+            fxr = self.inp.fx_rates.loc[:t].dropna()
+            drift = fx.expected_depreciation(fxr)
+            gap = fx.peer_gap(fxr["USD"], self.inp.peers.loc[:t], t, self.peer_window_days)
+            e_delta = float(np.nanmax([drift, gap]))
+            r = self.inp.rates.loc[:t].iloc[-1]
+            self._cond[t] = {"e_drift": drift, "peer_gap": gap, "e_delta": e_delta, "r_kzt": float(r["kzt"]),
+                             "r_usd": float(r["usd"]), "m": float(r["usd"] + e_delta - r["kzt"])}
+        return self._cond[t]
 
     def clusters_at(self, t) -> pd.Series:
         if t not in self._clusters:
@@ -312,7 +340,11 @@ class Engine:
             out |= {k: m[k] for k in ("rec_prob", "phase", "growth_next")}
         else:
             d = self.profile.base_risky_share
-        if cfg.fx and self.rules_mode == "derived":
+        if cfg.fx and cfg.fx_rule == "conditional":
+            c, r = self.cond_at(t), self.fx_at(t)
+            h = integration.conditional_fx_hedge(r, c["r_usd"], c["r_kzt"], c["e_delta"], self.rules)
+            out |= {"fx_risk": r, "m": c["m"], "e_delta": c["e_delta"], "peer_gap": c["peer_gap"]}
+        elif cfg.fx and self.rules_mode == "derived":
             der = self.derived_at(t)
             h = integration.derived_fx_hedge(d, der["m"], der["cov_e_delta"], der["var_delta"], self._gamma(),
                                              self.rules.hedge_max)
