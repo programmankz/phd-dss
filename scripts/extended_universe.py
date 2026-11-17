@@ -38,8 +38,10 @@ KASE9 = KASE8 + ["KMGZ"]
 NEW3 = ["ASBN", "FRHC_KZ", "CORE"]
 END = x.END_B
 # period -> (base set, added shares, start, shock windows)
-PERIODS = {"2022–2026": (KASE8, NEW3, "2022-01-10", {"2022": x.WINDOWS_B["2022"]}),
+PERIODS = {"2020–2026": (e2e.KASE7, ["ASBN", "CORE"], x.START_B, x.WINDOWS_B),
+           "2022–2026": (KASE8, NEW3, "2022-01-10", {"2022": x.WINDOWS_B["2022"]}),
            "2024–2026": (KASE9, NEW3 + ["AIRA"], "2024-02-19", {})}
+LABELS = {"base": "только KASE", "ext": "с добавленными", "nocore": "с добавленными, без CORE"}
 CONFIGS = (x.EW100, x.EW, x.MACRO, x.CUR, x.MC)
 NAMES = {"AIRA": "Air Astana, KASE", "ASBN": "ForteBank, KASE", "FRHC_KZ": "Freedom Holding, KASE",
          "CORE": "Solidcore Resources, AIX, USD"}
@@ -120,7 +122,7 @@ def markdown(res: dict, liq: pd.DataFrame, link: pd.Series) -> str:
            "четыре бумаги, загруженные 17.11.2026: AIRA (Air Astana), ASBN (ForteBank), FRHC_KZ (Freedom Holding) с KASE и "
            "CORE (Solidcore Resources, бывший Polymetal) с AIX. CORE торгуется в долларах США, цена пересчитана в тенге по "
            "официальному курсу НБ РК на день торгов. Долевая часть — равные веса, правила экспертные, параметры не менялись. "
-           "Оба периода пересекаются с уже использованными данными, состав добавленных бумаг выбран после получения основных "
+           "Периоды пересекаются с уже использованными данными, состав добавленных бумаг выбран после получения основных "
            "результатов: проверка разведочная, гипотезы ею не проверяются. `python scripts/extended_universe.py`; таблица "
            "`docs/results/extended_universe.csv`. Умеренный профиль, издержки 10 б.п., конец периода 09.10.2026.", "",
            "## Добавленные бумаги", "",
@@ -139,10 +141,10 @@ def markdown(res: dict, liq: pd.DataFrame, link: pd.Series) -> str:
         base_set, added, start, windows = PERIODS[period]
         out += [f"## {period}: {len(base_set)} бумаг KASE и {len(base_set) + len(added)} бумаг с добавленными", "",
                 f"Начало {pd.Timestamp(start):%d.%m.%Y}. Добавлены: {', '.join(added)}.", ""]
-        for label in ("base", "ext"):
+        for label in LABELS:
             table, tests = v[label]
-            n = len(base_set) + (len(added) if label == "ext" else 0)
-            out += [f"**{n} бумаг{' (с добавленными)' if label == 'ext' else ' (только KASE)'}**", "",
+            n = len(base_set) + {"base": 0, "ext": len(added), "nocore": len(added) - 1}[label]
+            out += [f"**{n} бумаг ({LABELS[label]})**", "",
                     "| Конфигурация | Доходность, % год. | Волатильность, % | Шарп | Макс. просадка, % | "
                     + "".join(f"Окно {w}, % | " for w in windows), "|" + "---|" * (5 + len(windows))]
             for name, r in table.iterrows():
@@ -161,16 +163,27 @@ def markdown(res: dict, liq: pd.DataFrame, link: pd.Series) -> str:
                 f"{num(e['diff'], sign=True)} [{num(e['low'])}; {num(e['high'])}], p = {num(e['p_two_sided'], 3)}.", ""]
     out += ["Положительная разность просадок означает менее глубокую просадку у правила.", "", "## Выводы", ""]
     for period, v in res.items():
-        (tb, sb), (te, se) = v["base"], v["ext"]
+        (tb, sb), (te, se), (tn, sn) = v["base"], v["ext"], v["nocore"]
         k1, k3 = "currency rule − EW + KZT, Sharpe", "macro rule − EW + KZT, max drawdown"
         out.append(f"* **{period}.** Валютное правило против равных весов с тенге, разность Шарпа: {num(sb[k1]['diff'], sign=True)} "
                    f"на наборе KASE и {num(se[k1]['diff'], sign=True)} [{num(se[k1]['low'])}; {num(se[k1]['high'])}] на расширенном. "
                    f"Макроправило, разность максимальной просадки: {x.pp(sb[k3]['diff'])} и {x.pp(se[k3]['diff'])} "
                    f"[{x.pp(se[k3]['low'])}; {x.pp(se[k3]['high'])}]. Равные веса с тенге: Шарп {num(tb.loc[x.EW.name, 'sharpe'])} "
                    f"и {num(te.loc[x.EW.name, 'sharpe'])}, просадка {pct(tb.loc[x.EW.name, 'max_drawdown'])} и "
-                   f"{pct(te.loc[x.EW.name, 'max_drawdown'])}.")
-    out += ["* Добавление бумаг, включая CORE с AIX, знаков и порядка величин не меняет: в оба периода долларовая "
-            "позиция снижает Шарп (в окне шока 2022 г. она уменьшает потери меньше чем на 1 п.п.), макроправило уменьшает просадку 2022 г. и ничего не даёт в 2024–2026 гг.",
+                   f"{pct(te.loc[x.EW.name, 'max_drawdown'])}. Без CORE: {num(sn[k1]['diff'], sign=True)}; {x.pp(sn[k3]['diff'])}; "
+                   f"Шарп {num(tn.loc[x.EW.name, 'sharpe'])}, просадка {pct(tn.loc[x.EW.name, 'max_drawdown'])}."
+                   + "".join(f" Окно {w}, валютное правило минус равные веса с тенге: "
+                             f"{pct(tb.loc[x.CUR.name, f'window {w}'] - tb.loc[x.EW.name, f'window {w}'], 2, sign=True)} (KASE), "
+                             f"{pct(te.loc[x.CUR.name, f'window {w}'] - te.loc[x.EW.name, f'window {w}'], 2, sign=True)} (расширенный), "
+                             f"{pct(tn.loc[x.CUR.name, f'window {w}'] - tn.loc[x.EW.name, f'window {w}'], 2, sign=True)} (без CORE)."
+                             for w in PERIODS[period][3]))
+    out += ["* Добавление бумаг, включая CORE с AIX, знаков и порядка величин не меняет: во всех трёх периодах "
+            "долларовая позиция снижает Шарп, в окнах шоков 2020 и 2022 гг. она уменьшает потери; макроправило уменьшает "
+            "просадку 2022 г. и ничего не даёт в 2024–2026 гг.",
+            "* Период с 2020 г. — с оговоркой по ликвидности: в 2020 г. сделки с ASBN были в 150 торговых днях, с CORE на AIX — "
+            "в 90; в дни без сделок цена протянута, поэтому волатильность и просадка этих бумаг в 2020 г. занижены.",
+            "* CORE — особый случай: падение 2022 г. связано с российскими активами эмитента (их продажа завершена в 2024 г.), "
+            "это событие компании, а не рынка Казахстана. Поэтому каждый расчёт повторён без CORE: выводы те же.",
             "* Расширенный набор сам по себе рискованнее: в окне 2022 г. он теряет больше (CORE за окно потерял 64%), "
             "просадка глубже, Шарп тот же.",
             "* CORE котируется в долларах, но защитой от ослабления тенге не служит: связь его недельной доходности в тенге "
@@ -188,7 +201,8 @@ def main(argv=None) -> int:
     for period, (base, added, start, windows) in PERIODS.items():
         print(period)
         v, ew = {}, {}
-        for label, inp in (("base", e2e.load_inputs(base)), ("ext", extended_inputs(base, added))):
+        for label, inp in (("base", e2e.load_inputs(base)), ("ext", extended_inputs(base, added)),
+                           ("nocore", extended_inputs(base, [t for t in added if t != "CORE"]))):
             daily, table, rf = run(inp, start, windows)
             tests = tests_of(daily, rf)
             v[label], ew[label] = (table, tests), daily[x.EW.name] - rf.reindex(daily.index)
