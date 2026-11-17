@@ -87,6 +87,7 @@ python scripts/kase_profile.py       # доходность – риск – л�
 python scripts/build_dataset.py      # набор KZ-MacroFin и классификаторы режимов → data_build/kz_macrofin.csv, docs/dataset.md
 python scripts/experiment_2026_11.py # предрегистрированный эксперимент (docs/preregistration.md) → docs/results_2026_11.md
 python scripts/experiment_2008_2019.py # независимая проверка на 2008–2019 гг. (docs/preregistration_2008_2019.md) → docs/results_2008_2019.md
+python scripts/control_constant_shares.py # разведочный контроль: правила против постоянных долей → docs/control_constant_shares.md
 ```
 
 ## Тесты и проверка стиля

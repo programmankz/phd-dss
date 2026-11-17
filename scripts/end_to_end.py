@@ -165,6 +165,7 @@ class Config:
     kappa: float = 0.0             # turnover penalty of the optimiser, kappa ||w - w_prev||_1
     weights: str | None = None     # baseline rule of the risky part (dss.baselines), replaces m4/clusters
     fx_rule: str = "expert"       # "conditional": rule (6) only when r_usd + E[delta] - r_kzt > 0 (see Engine.cond_at)
+    h_fixed: float | None = None   # overrides h: constant dollar share (control portfolio for the currency rule)
     clusters: bool | None = None   # Module III cluster limits; None: on together with m4 (as in Tables 4-5).
                                    # m4 off, clusters on: equal weights per cluster, capped (cluster_equal_weights);
                                    # m4 on, clusters off: optimiser (4) with the per-asset cap only
@@ -340,7 +341,9 @@ class Engine:
             out |= {k: m[k] for k in ("rec_prob", "phase", "growth_next")}
         else:
             d = self.profile.base_risky_share
-        if cfg.fx and cfg.fx_rule == "conditional":
+        if cfg.h_fixed is not None:
+            h = cfg.h_fixed
+        elif cfg.fx and cfg.fx_rule == "conditional":
             c, r = self.cond_at(t), self.fx_at(t)
             h = integration.conditional_fx_hedge(r, c["r_usd"], c["r_kzt"], c["e_delta"], self.rules)
             out |= {"fx_risk": r, "m": c["m"], "e_delta": c["e_delta"], "peer_gap": c["peer_gap"]}
