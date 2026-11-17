@@ -283,6 +283,9 @@ def run(gdp_wide: pd.DataFrame, country: str = config.TARGET_COUNTRY,
     seed = config.RANDOM_SEED
     long = to_long(gdp_wide)
     feats = build_features(long).dropna(subset=FEATURES)
+    # early vintages (panel ending before train_end + 5): keep five test years for the evaluation tables;
+    # the nowcast used by the decision rules is re-fitted on all data below and does not depend on the split
+    train_end = min(train_end, int(feats.year.max()) - 5)
     train, test = feats[feats.year <= train_end], feats[feats.year > train_end]
     scaler = StandardScaler().fit(train[FEATURES])
     Xtr, Xte = scaler.transform(train[FEATURES]), scaler.transform(test[FEATURES])
@@ -320,6 +323,8 @@ def run(gdp_wide: pd.DataFrame, country: str = config.TARGET_COUNTRY,
 
     # ---- robustness: without rolling features, alternative split  ([A1] Table 11)
     def _gb_rmse(cols, tr, te):
+        if len(tr) == 0 or len(te) < 2:          # split or crisis years outside an early vintage
+            return float("nan"), float("nan")
         sc = StandardScaler().fit(tr[cols])
         m = GradientBoostingRegressor(n_estimators=100, learning_rate=0.05, max_depth=3, random_state=seed)
         m.fit(sc.transform(tr[cols]), tr.growth)

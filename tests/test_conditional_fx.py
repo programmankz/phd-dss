@@ -78,3 +78,13 @@ def test_engine_conditional_rule_point_in_time():
     inp2 = e2e.Inputs(prices, fxr["USD"].reindex(days), fxr, gdp, rates, "test", None, peers2)
     eng2 = e2e.Engine(inp2, "moderate", "2014-06-02", "2015-06-30", need_m4=False, log=lambda *a: None)
     assert eng2.decide(pd.Timestamp("2014-11-03"), cfg)["h"] == before["h"]
+
+
+def test_macro_module_runs_on_a_vintage_before_the_default_split():
+    from dss import macro
+    rng = np.random.default_rng(0)
+    years = list(range(1980, 2007))                                    # panel ends before MACRO_TRAIN_END_YEAR
+    gdp = pd.DataFrame(rng.normal(3, 4, (40, len(years))), index=["Kazakhstan"] + [f"C{i}" for i in range(39)],
+                       columns=years)
+    m = macro.run(gdp, dtw=False)
+    assert 0.0 <= m.recession_prob <= 1.0
