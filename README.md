@@ -86,6 +86,7 @@ python scripts/clusters_kase.py      # меры сходства, ликвидн
 python scripts/kase_profile.py       # доходность – риск – ликвидность рынка KASE → docs/kase_profile.md
 python scripts/build_dataset.py      # набор KZ-MacroFin и классификаторы режимов → data_build/kz_macrofin.csv, docs/dataset.md
 python scripts/experiment_2026_11.py # предрегистрированный эксперимент (docs/preregistration.md) → docs/results_2026_11.md
+python scripts/experiment_2008_2019.py # независимая проверка на 2008–2019 гг. (docs/preregistration_2008_2019.md) → docs/results_2008_2019.md
 ```
 
 ## Тесты и проверка стиля
