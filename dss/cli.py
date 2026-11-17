@@ -32,7 +32,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="dss", description="СППР управления инвестиционным портфелем")
     sub = p.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch", help="загрузить реальные данные")
-    f.add_argument("what", choices=["gdp", "fx", "nse", "kase", "rates", "kase-dividends", "kase-extra",
+    f.add_argument("what", choices=["gdp", "fx", "nse", "kase", "rates", "kase-dividends", "kase-extra", "extended",
                                          "kase-index", "bonds", "brent", "macro", "fx-panel"])
     f.add_argument("--start", default=None)
     f.add_argument("--tickers", default=None, help="kase/nse: тикеры через запятую вместо набора по умолчанию")
@@ -98,6 +98,16 @@ def main(argv=None) -> int:
             h["volume"].to_csv(out / "volumes_kase_extra.csv")
             print(f"prices_kase_extra.csv: {h['close'].shape[1]} бумаг, {h['close'].index.min():%Y-%m-%d} – "
                   f"{h['close'].index.max():%Y-%m-%d}")
+        elif a.what == "extended":
+            h = loaders.fetch_kase_history(loaders.KASE_NEW_TICKERS, start=a.start or "2016-01-01", fill="none")
+            h["close"].to_csv(out / "prices_kase_new.csv")
+            h["volume"].to_csv(out / "volumes_kase_new.csv")
+            x = loaders.fetch_aix_history(start=a.start or "2017-01-01")
+            x["close"].to_csv(out / "prices_aix.csv")
+            x["volume"].to_csv(out / "volumes_aix.csv")
+            div = loaders.fetch_kase_dividends(loaders.KASE_NEW_TICKERS, cache=out / "dividends_kase_new.csv")
+            print(f"prices_kase_new.csv: {', '.join(h['close'].columns)}; prices_aix.csv: {', '.join(x['close'].columns)} "
+                  f"(USD); dividends_kase_new.csv: {len(div)} выплат")
         elif a.what == "kase-index":
             df = loaders.fetch_kase_index(start=a.start or "2008-01-01")
             bi = loaders.fetch_kase_bond_indices(start=a.start or "2008-01-01")

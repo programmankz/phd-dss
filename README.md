@@ -88,6 +88,7 @@ python scripts/build_dataset.py      # набор KZ-MacroFin и классиф�
 python scripts/experiment_2026_11.py # предрегистрированный эксперимент (docs/preregistration.md) → docs/results_2026_11.md
 python scripts/experiment_2008_2019.py # независимая проверка на 2008–2019 гг. (docs/preregistration_2008_2019.md) → docs/results_2008_2019.md
 python scripts/control_constant_shares.py # разведочный контроль: правила против постоянных долей → docs/control_constant_shares.md
+python scripts/extended_universe.py      # разведочная проверка на расширенном наборе (KASE и AIX) → docs/extended_universe.md
 ```
 
 ## Тесты и проверка стиля

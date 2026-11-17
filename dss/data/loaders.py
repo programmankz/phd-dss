@@ -465,6 +465,60 @@ def fetch_kase(tickers=None, start: str = "2019-01-01", end: str | None = None) 
 # Liquid KASE shares of 2008-2015 that are delisted or outside the main set (data/prices_kase_extra.csv):
 # >= ~500 trading days in 2008-2015 in the chart feed.
 KASE_EXTRA_TICKERS = ["GB_KZMS", "RDGZ", "RDGZp", "KKGB", "KKGBp", "BTAS", "KZTKp", "GB_ENRC"]
+# Shares added on 17.11.2026 for the extended universe (exploratory check, docs/extended_universe.md):
+# KASE names outside the main set and the one liquid AIX share without a KASE-only twin.
+KASE_NEW_TICKERS = ["AIRA", "ASBN", "FRHC_KZ"]
+AIX_TICKERS = ["CORE"]
+AIX_HISTORY_URL = "https://market-backend.aixkz.com/api/symbol/historical-specific/?filter={filter}"
+BROWSER_AGENT = "Mozilla/5.0"       # the AIX backend rejects non-browser agents
+
+
+def parse_aix_history(records: list) -> pd.DataFrame:
+    """Rows of the AIX historical feed -> frame indexed by date with ``close`` (trading currency
+    of the instrument) and ``value`` (turnover in that currency); days without deals are dropped."""
+    df = pd.DataFrame(records, columns=["date", "close", "value", "volume"])
+    df["date"] = pd.to_datetime(df["date"].astype(str).str[:10], format="%Y-%m-%d")
+    for c in ("close", "value", "volume"):
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df = df[(df["volume"] > 0) & (df["close"] > 0)].drop_duplicates("date", keep="last")
+    return df.set_index("date").sort_index()[["close", "value"]]
+
+
+def fetch_aix_history(codes=None, start: str = "2017-01-01", end: str | None = None) -> dict[str, pd.DataFrame]:
+    """Daily closes and turnover of AIX instruments in their trading currency (CORE: USD),
+    days with deals only: {"close": frame, "volume": frame}."""
+    import urllib.parse
+    end = end or (pd.Timestamp.today().normalize() - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    close, volume = {}, {}
+    for c in codes or AIX_TICKERS:
+        flt = json.dumps({"secCode": c, "dateFrom": start, "dateTo": end}, separators=(",", ":"))
+        url = AIX_HISTORY_URL.format(filter=urllib.parse.quote(flt))
+        df = parse_aix_history(json.loads(_get(url, timeout=120, agent=BROWSER_AGENT)))
+        close[c], volume[c] = df["close"], df["value"]
+    px = pd.DataFrame(close).sort_index()
+    px.index.name = "Date"
+    return {"close": px, "volume": pd.DataFrame(volume).reindex(px.index)}
+
+
+def load_extended_prices(usd: pd.Series | None = None) -> pd.DataFrame:
+    """Tenge prices of the shares of the extended universe on their trading days:
+    data/prices_kase_new.csv with the dividends of data/corporate_actions_new.csv removed, and
+    data/prices_aix.csv (USD) converted at the official NBK rate of the day (``usd``: KZT per
+    USD on calendar days; default data/fx_rates.csv). Days after the last rate are dropped."""
+    d = data_dir()
+    kase = _dated_frame(d / "prices_kase_new.csv", "Date,<тикер1>,…")
+    path = d / "corporate_actions_new.csv"
+    actions = validate_corporate_actions(_read_csv(path), path.name) if path.exists() else None
+    kase, _ = apply_corporate_actions(kase, actions)
+    aix = _dated_frame(d / "prices_aix.csv", "Date,<тикер1>,…")
+    if usd is None:
+        usd = load_fx().frame["USD"]
+    usd = usd.dropna()
+    aix = aix[aix.index <= usd.index.max()]
+    aix = aix.mul(usd.reindex(aix.index, method="ffill"), axis=0)
+    return pd.concat([kase, aix], axis=1, sort=True)
+
+
 KASE_INDEX_URL = "https://kase.kz/api/indicators/index-kase/archive-xls?start_date={start}&end_date={end}&language=ru"
 # Bond indices published by KASE: archive path -> columns kept (GSec indices KZGB since 03.2022,
 # corporate bond indices KASE_BMY / KASE_BMC since 09.2017).
