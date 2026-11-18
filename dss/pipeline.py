@@ -139,7 +139,12 @@ def run(settings: Settings | None = None) -> RunResult:
     dm = cached("forecast_tests", _fingerprint(prices, st.models, proto),
                 lambda: significance.forecast_tests(s.predictions, prices, signals.MODEL_LABELS))
     sectors = fund.frame["sector"] if "sector" in fund.frame else pd.Series(dtype=str)
-    d = integration.decide(m, f, c, s, prices, st, sectors)
+    der = derived_inputs(st, gdp.frame, rates.frame, f) if st.rules == "derived" and not px.is_demo else None
+    if st.rules == "derived" and der is None:
+        errors.append("Выведенные правила требуют реальных данных KASE и ставок; показаны экспертные правила.")
+    d = integration.decide(m, f, c, s, prices, st, sectors, derived=der)
+    if st.rules == "derived" and der is not None:
+        d.steps[0]["facts"].append(der["note"])
     sources = {"ВВП (Модуль I)": gdp.source, "Курсы (Модуль II)": rates.source,
                "Цены (Модули III–IV)": px.source, "Фундаментальные (Модуль III)": fund.source}
     is_demo = gdp.is_demo or rates.is_demo or px.is_demo
@@ -176,3 +181,46 @@ def significance_tables(r: RunResult, fmt=lambda v: num(v, 2)) -> tuple[pd.DataF
                        "DM": dm["dm"], "p-значение": dm["p_value"], "Вывод (α = 5%)": dm["verdict"]},
                       index=dm.index)
     return t1, t2
+
+
+GAMMA_FILE = Path(__file__).resolve().parents[1] / "docs" / "results" / "derived_rules_gamma.csv"
+LOW_GROWTH_QUANTILE, FX_COV_WINDOW = 0.25, 756      # as in scripts/end_to_end.py
+
+
+def gamma_for(profile: str) -> tuple[float, str]:
+    """gamma of the derived rules: the value calibrated on 2016-2022 by scripts/derived_rules.py."""
+    try:
+        g = pd.read_csv(GAMMA_FILE)
+        row = g[(g["profile"] == profile) & g["sample"].str.contains("2023")].iloc[0]
+        return float(row["gamma"]), (f"γ = {num(row['gamma'], 3)} откалибровано на {row['train_start']} – "
+                                     f"{row['train_end']}" + ("" if row["attained"] else " (цель d0 недостижима, нижняя граница)"))
+    except Exception:
+        return 0.05, "γ = 0,05 по умолчанию (нет docs/results/derived_rules_gamma.csv)"
+
+
+def derived_inputs(st: Settings, gdp: pd.DataFrame, fx_rates: pd.DataFrame, f) -> dict | None:
+    """Inputs of the derived rules on the last date of the data (same definitions as Engine.derived_at)."""
+    import numpy as np
+
+    from .data import loaders
+    if st.universe != "kase":
+        return None
+    rates, _ = loaders.load_rates()
+    if rates is None or "Kazakhstan" not in gdp.index:
+        return None
+    px, _ = loaders.raw_prices("kase")
+    market = px.pct_change(fill_method=None).where(px.notna() & px.shift(1).notna()).mean(axis=1).dropna()
+    g = gdp.loc["Kazakhstan"].dropna()
+    g = g[g.index >= 2000]
+    y = int(g.index.max())
+    adverse_years = set(g.index[g < g.quantile(LOW_GROWTH_QUANTILE)])
+    mk = market[market.index.year <= y]
+    mom = integration.regime_moments(mk, pd.Series(mk.index.year.isin(adverse_years), index=mk.index))
+    r = rates.loc[:market.index.max()].iloc[-1]
+    tail = market.iloc[-FX_COV_WINDOW - 1:]
+    usd = fx_rates["USD"].reindex(tail.index, method="ffill")
+    both = pd.concat([tail, usd.pct_change()], axis=1).dropna()
+    gamma, note = gamma_for(st.profile)
+    return {"moments": mom, "r_kzt": float(r["kzt"]), "m": float(r["usd"] + f.exp_depreciation - r["kzt"]),
+            "cov_e_delta": float(np.cov(both.to_numpy().T)[0, 1] * 252), "var_delta": float(both.iloc[:, 1].var() * 252),
+            "gamma": gamma, "note": f"выведенные правила: {note}; неблагоприятный режим — годы {', '.join(map(str, sorted(adverse_years)))}"}

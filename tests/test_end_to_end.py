@@ -91,3 +91,12 @@ def test_perturbation_changes_only_the_future():
     assert (pert.fx_rates.loc[:"2024-01-09"] == inp.fx_rates.loc[:"2024-01-09"]).all().all()
     assert not np.allclose(pert.gdp[2023], inp.gdp[2023])
     pd.testing.assert_series_equal(pert.gdp[2022], inp.gdp[2022])
+
+
+def test_resolve_start_shifts_to_first_signal_with_warning():
+    msgs = []
+    assert e2e.resolve_start("2023-01-16", "2023-01-17", msgs.append) == pd.Timestamp("2023-01-17")
+    assert msgs and "WARNING" in msgs[0]
+    msgs.clear()
+    assert e2e.resolve_start("2023-02-01", "2023-01-17", msgs.append) == pd.Timestamp("2023-02-01")
+    assert not msgs

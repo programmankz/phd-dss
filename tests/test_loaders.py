@@ -285,3 +285,202 @@ def test_corporate_actions_are_validated():
     for text, fragment in cases:
         with data_dir({"prices_kase.csv": prices_csv(), "corporate_actions.csv": text}):
             raises(lambda: loaders.load_prices("kase"), "corporate_actions.csv", fragment)
+
+
+# ------------------------------------------------------------------ KASE dividends and volumes
+def test_kase_ex_date_register_at_midnight_t2_and_t0():
+    cal = pd.bdate_range("2015-11-02", "2015-11-30").append(pd.bdate_range("2023-05-22", "2023-06-09"))
+    # T+2, record Wed 2023-05-31: settle by Tue 30 -> deal Fri 26 -> ex-date Mon 29 (HSBK 2023)
+    assert loaders.kase_ex_date(pd.Timestamp("2023-05-31"), cal) == pd.Timestamp("2023-05-29")
+    # record on a Sunday: the last trading day before it is Fri 2 June -> ex-date Thu 1 June
+    assert loaders.kase_ex_date(pd.Timestamp("2023-06-04"), cal) == pd.Timestamp("2023-06-01")
+    # T+0 before the switch: ex-date is the first trading day on or after the record date
+    assert loaders.kase_ex_date(pd.Timestamp("2015-11-11"), cal, "2015-12-09") == pd.Timestamp("2015-11-11")
+    assert loaders.kase_ex_date(pd.Timestamp("2015-11-15"), cal, "2015-12-09") == pd.Timestamp("2015-11-16")
+
+
+def test_kase_dividends_are_parsed_and_empty_entries_dropped():
+    import json
+    records = [{"is_paid": True, "protocol_date": "2025-05-15", "fixation_date": "2025-05-25",
+                "period_start_date": "2024-01-01", "period_end_date": "2024-12-31",
+                "payment_start_date": "2025-05-25", "per_share": 19923.74, "total_sum": None},
+               {"is_paid": False, "protocol_date": None, "fixation_date": None, "per_share": None},
+               {"is_paid": True, "fixation_date": "1996-12-31", "per_share": 0.0, "total_sum": 7.8e7}]
+
+    real_get, loaders._get = loaders._get, lambda url, timeout=30: json.dumps(records).encode()
+    try:
+        with data_dir({}) as tmp:
+            df = loaders.fetch_kase_dividends(["KZTK"])
+            saved = pd.read_csv(tmp / "dividends_kase.csv")
+    finally:
+        loaders._get = real_get
+    assert len(df) == 1 and df.loc[0, "record_date"] == "2025-05-25" and df.loc[0, "per_share"] == 19923.74
+    assert list(saved.columns[:3]) == ["ticker", "record_date", "per_share"]
+
+
+def test_kase_history_keeps_turnover_and_drops_todays_bar():
+    import json
+    day = 86400 * 19000
+    today = int(pd.Timestamp.today().normalize().timestamp())
+
+    def fake_get(url, timeout=30):
+        return json.dumps({"s": "ok", "t": [day, day + 86400 * 2, today], "c": [10.0, 11.0, 12.0],
+                           "v": [1e6, 2e6, 5.0]}).encode()
+
+    real_get, loaders._get = loaders._get, fake_get
+    try:
+        out = loaders.fetch_kase_history(["A"], start="2022-01-01")
+    finally:
+        loaders._get = real_get
+    assert out["close"]["A"].tolist() == [10.0, 11.0]
+    assert out["volume"]["A"].tolist() == [1e6, 2e6]
+
+
+def test_kase_ex_date_for_shares_that_never_switched_to_t2():
+    cal = pd.bdate_range("2025-05-19", "2025-05-30")
+    # KZTKp: record Sun 25.05.2025, T+0 -> first trading day on or after it, Mon 26.05
+    assert loaders.kase_ex_date(pd.Timestamp("2025-05-25"), cal, None) == pd.Timestamp("2025-05-26")
+    assert loaders.kase_ex_date(pd.Timestamp("2025-05-25"), cal) == pd.Timestamp("2025-05-22")
+
+
+def test_kase_history_fill_modes():
+    import json
+    day = 86400 * 19000
+
+    def fake_get(url, timeout=30):
+        t = [day, day + 86400 * 2] if "symbol=A" in url else [day, day + 86400, day + 86400 * 3]
+        return json.dumps({"s": "ok", "t": t, "c": [10.0 + i for i in range(len(t))], "v": [1.0] * len(t)}).encode()
+
+    real_get, loaders._get = loaders._get, fake_get
+    try:
+        inside = loaders.fetch_kase_history(["A", "B"], start="2022-01-01", fill="inside")["close"]
+        none = loaders.fetch_kase_history(["A", "B"], start="2022-01-01", fill="none")["close"]
+    finally:
+        loaders._get = real_get
+    assert inside["A"].tolist()[:3] == [10.0, 10.0, 11.0] and np.isnan(inside["A"].iloc[3])  # delisted: no tail
+    assert np.isnan(none["A"].iloc[1]) and none["B"].notna().sum() == 3
+
+
+def test_kase_archive_sheet_is_parsed_day_first_and_sorted():
+    raw = pd.DataFrame([["Индекс KASE 2008-01-01 - 2008-01-09", None, None],
+                        ["Дата", "Закрытие", "Объем, млн KZT"],
+                        ["09.01.08", "2624,95", 194.55],
+                        ["03.01.2008", 2640.15, 141.19],
+                        ["04.01.08", 2600.12, "1 136,2"]])
+    df = loaders.parse_kase_archive(raw)
+    assert list(df.index.strftime("%Y-%m-%d")) == ["2008-01-03", "2008-01-04", "2008-01-09"]
+    assert df["Закрытие"].tolist() == [2640.15, 2600.12, 2624.95] and df["Объем, млн KZT"].iloc[1] == 1136.2
+
+
+def test_kase_bond_passport_is_read_by_label():
+    j = {"848": {"label": "ISIN", "value": "XS1120709826"},
+         "1": {"label": "Валюта выпуска и обслуживания", "value": "USD"},
+         "2": {"label": "Номинальная стоимость в валюте выпуска",
+               "value": "1,00 (минимальный размер долга в номинальном выражении)"},
+         "3": {"label": "Текущая купонная ставка, % годовых", "value": "4,875"},
+         "4": {"label": "Дата начала обращения", "value": "14.10.14"},
+         "5": {"label": "Срок обращения, дней", "value": "10 800"},
+         "market_makers": {"label": "Маркет-мейкеры", "value": "отсутствует"}}
+    row = loaders.parse_kase_characteristics(j, "KZ_06_4410")
+    assert row["isin"] == "XS1120709826" and row["currency"] == "USD" and row["nominal"] == 1.0
+    assert row["coupon_pct"] == 4.875 and row["start_date"] == "2014-10-14" and row["maturity"] == "2044-10-14"
+    j["6"] = {"label": "Дата погашения", "value": "25.03.15"}
+    assert loaders.parse_kase_characteristics(j, "X")["maturity"] == "2015-03-25"
+
+
+# ------------------------------------------------------------------ rates and macro data
+def test_nbk_base_rate_dates_broken_by_markup():
+    html = ("<td>26.04<span> .2022</span></td><td>&nbsp;14.00</td><td>13.00 - 15.00</td><td>25.01.2022</td><td>10.25</td>"
+            "<td>07.09.2026</td><td>16 <b>.</b> 25</td><td>15 . 25 - 17 . 25</td>")
+    df = loaders.parse_nbk_base_rate(html)
+    assert df["effective_from"].dt.strftime("%Y-%m-%d").tolist() == ["2022-04-26", "2022-01-25", "2026-09-07"]
+    assert df["rate"].tolist() == [14.0, 10.25, 16.25]
+
+
+def test_nbk_refinancing_table_is_parsed():
+    html = ("<tr><td>01.12.2007</td><td>№137 от 30.11.2007</td><td>11</td></tr>"
+            "<tr><td>05.02.2009</td><td>№ 8 от 04.02.2009</td><td>9,5</td></tr>"
+            "<tr><td>01.06.1995</td><td>№-, 31.05.95</td><td>75</td><td>69</td></tr>"
+            "<tr><td>01.04.2017*</td><td>№30 от 24.02.2017</td><td>11.0</td></tr>")
+    df = loaders.parse_nbk_refinancing(html)
+    assert df["effective_from"].dt.strftime("%Y-%m-%d").tolist() == ["1995-06-01", "2007-12-01", "2009-02-05",
+                                                                    "2017-04-01"]
+    assert df["rate"].tolist() == [75.0, 11.0, 9.5, 11.0]
+
+
+def test_fred_series_is_read_and_retried():
+    import urllib.error
+    calls = []
+
+    def fake_get(url, timeout=30, **kw):
+        calls.append(url)
+        if len(calls) == 1:
+            raise urllib.error.URLError("connection reset")
+        return b"observation_date,DCOILBRENTEU\n1999-12-31,25.0\n2000-01-04,23.95\n2000-01-05,.\n2000-01-06,23.72\n"
+
+    real_get, real_sleep = loaders._get, loaders.time.sleep
+    loaders._get, loaders.time.sleep = fake_get, lambda s: None
+    try:
+        s = loaders.fetch_fred("DCOILBRENTEU", "2000-01-01")
+    finally:
+        loaders._get, loaders.time.sleep = real_get, real_sleep
+    assert len(calls) == 2 and s.tolist() == [23.95, 23.72]
+
+
+def test_stat_cpi_growth_and_index_conventions():
+    old = pd.DataFrame([["Индекс потребительских цен"] + [None] * 12,
+                        ["к соответствующему месяцу предыдущего года"] + [None] * 12,
+                        ["Товары и услуги", 18.7, 18.8] + [None] * 10])
+    new = pd.DataFrame([["к предыдущему месяцу"] + [None] * 12, ["Товары и услуги", 101.0] + [None] * 11,
+                        ["к соответствующему месяцу предыдущего года"] + [None] * 12,
+                        ["Товары и услуги", 112.2] + [None] * 11])
+    s = loaders.parse_stat_cpi({"Метаданные": pd.DataFrame(), "monthly 2008": old, "monthly 2026": new})
+    assert s.to_dict() == {pd.Period("2008-01", "M"): 18.7, pd.Period("2008-02", "M"): 18.8,
+                           pd.Period("2026-01", "M"): 12.2}
+
+
+def test_stat_kei_months_follow_year_rows():
+    df = pd.DataFrame([[None, "Период", "за месяц", "с начала года", "ИФО, %"],
+                       [None, None, "2021 г.", None, None], [None, "Январь", 4651.7, 4651.7, 94.2],
+                       [None, "Февраль", 4936.2, 9587.8, 96], [None, "2022г.", None, None, None],
+                       [None, "Январь", 5888.6, 5888.6, 103]])
+    s = loaders.parse_stat_kei({"2021-2026": df, "Метаданные": pd.DataFrame()})
+    assert s.to_dict() == {pd.Period("2021-01", "M"): 94.2, pd.Period("2021-02", "M"): 96.0,
+                           pd.Period("2022-01", "M"): 103.0}
+
+
+def test_cbar_bulletin_converts_old_manat():
+    xml = ('<ValCurs Date="03.01.2000"><ValType Type="Xarici valyutalar"><Valute Code="EUR"><Nominal>1</Nominal>'
+           '<Value>4400</Value></Valute><Valute Code="USD"><Nominal>1</Nominal><Value>4368</Value></Valute>'
+           '</ValType></ValCurs>').encode()
+    d, v = loaders.parse_cbar(xml)
+    assert d == pd.Timestamp("2000-01-03") and abs(v - 0.8736) < 1e-12
+    d, v = loaders.parse_cbar(xml.replace(b"03.01.2000", b"04.01.2016").replace(b"4368", b"1.5594"))
+    assert v == 1.5594
+
+
+def test_taldau_kei_keeps_the_republic_row_in_bn_kzt():
+    records = [{"terms": [1], "termNames": ["Г.АЛМАТЫ"], "periods": [{"date": "31.01.2021", "value": "5"}]},
+               {"terms": [2], "termNames": ["РЕСПУБЛИКА КАЗАХСТАН"],
+                "periods": [{"name": "Февраль 2021 г.", "date": "28.02.2021", "value": "4936200000000"},
+                            {"name": "Январь 2021 г.", "date": "31.01.2021", "value": "4651700000000"}]}]
+    s = loaders.parse_taldau_kei(records)
+    assert s.to_dict() == {pd.Period("2021-01", "M"): 4651.7, pd.Period("2021-02", "M"): 4936.2}
+
+
+def test_clp_years_are_merged_and_failed_years_skipped():
+    import json
+    import urllib.error
+
+    def fake_get(url, timeout=30, **kw):
+        if url.endswith("/2001"):
+            raise urllib.error.URLError("timeout")
+        return json.dumps({"codigo": "dolar", "serie": [{"fecha": "2000-01-04T03:00:00.000Z", "valor": 520.1},
+                                                         {"fecha": "2000-01-03T03:00:00.000Z", "valor": 518.0}]}).encode()
+
+    real_get, loaders._get = loaders._get, fake_get
+    try:
+        s = loaders.fetch_clp(2000, 2001)
+    finally:
+        loaders._get = real_get
+    assert list(s.index.strftime("%Y-%m-%d")) == ["2000-01-03", "2000-01-04"] and s.iloc[0] == 518.0

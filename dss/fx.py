@@ -138,6 +138,33 @@ def expected_depreciation(df: pd.DataFrame, col: str = "USD") -> float:
     return float(np.expm1(0.5 * d1 + 0.5 * d5))
 
 
+PEER_CURRENCIES = ("NOK", "BRL", "RUB", "CLP")   # commodity currencies of data/fx_commodity_panel.csv (AZN is pegged)
+PEER_WINDOW_DAYS = 182   # calendar days of the comparison window (half a year)
+PEER_LAG_DAYS = 7        # publication lag of the peer rates (FRED H.10 is released weekly)
+
+
+def _asof(s: pd.Series, t) -> float:
+    s = s.dropna().loc[:t]
+    return float(s.iloc[-1]) if len(s) else np.nan
+
+
+def peer_gap(usd_kzt: pd.Series, peers: pd.DataFrame, t, window_days: int = PEER_WINDOW_DAYS,
+             lag_days: int = PEER_LAG_DAYS, currencies=PEER_CURRENCIES) -> float:
+    """Depreciation of commodity currencies against the dollar that the tenge has not yet followed.
+
+    Mean log change of the peer rates (units per USD) over ``window_days`` ending ``lag_days`` before ``t``
+    minus the log change of USD/KZT over ``window_days`` ending at ``t``. Positive: the peers weakened
+    more than the tenge (pressure on a managed rate). Uses only values dated not later than ``t``."""
+    t = pd.Timestamp(t)
+    w, lag = pd.Timedelta(days=window_days), pd.Timedelta(days=lag_days)
+    kzt = np.log(_asof(usd_kzt, t) / _asof(usd_kzt, t - w))
+    ch = [np.log(_asof(peers[c], t - lag) / _asof(peers[c], t - lag - w)) for c in currencies if c in peers]
+    ch = [c for c in ch if np.isfinite(c)]
+    if not ch or not np.isfinite(kzt):
+        return float("nan")
+    return float(np.mean(ch) - kzt)
+
+
 def run(rates: pd.DataFrame) -> FxResult:
     rates = rates.dropna()
     reg, fitted = trend_regression(rates)

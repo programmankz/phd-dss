@@ -11,7 +11,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 PAGES = {"decision": "/", "macro": "/macro", "fx": "/fx", "clusters": "/clusters",
-         "signals": "/signals", "data": "/data"}
+         "signals": "/signals", "quality": "/quality", "data": "/data"}
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--base", default="http://127.0.0.1:8050")
