@@ -77,8 +77,8 @@ def main(argv=None) -> int:
             print(r.metrics.to_string(float_format=lambda v: num(v, 3), na_rep="—"), "\n")
             print(r.coefficients.to_string(float_format=lambda v: num(v, 4), na_rep="—"), "\n")
             if s["available"]:
-                print(f"Показатель на {s['period']}: A = {s['value']}, P(A = 1) = {num(s['probs']['AR(1) + KASE'], 2)}, "
-                      f"прогноз роста {num(s['growth']['AR(1) + KASE'], 1)}%")
+                print(f"Показатель на {s['period']}: A = {s['value']}, P(A = 1) = {num(s['probs']['ARIMA + KASE'], 2)}, "
+                      f"прогноз роста {num(s['growth']['ARIMA + KASE'], 1)}% (ARIMA без индекса {num(s['growth']['ARIMA'], 1)}%)")
         return 0
 
     if a.cmd == "fetch":

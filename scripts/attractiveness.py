@@ -34,8 +34,9 @@ def main() -> None:
                "классификаторы обучаются на панели стран [A1]).\n")
     out.append(f"**Опережающий индикатор.** Доходность индекса KASE за {att.WINDOW_MONTHS} мес. до начала периода. "
                "Окно задано заранее.\n")
-    out.append("**Модели.** ARIMA (опорная): порядок интегрирования d по тесту Дики–Фуллера на уровне 5%, p и q по AIC; "
-               "для сравнения оставлена ARIMA по сетке порядков [A1], где d = 1 всегда. AR(1), AR(1) + KASE, логистическая регрессия, "
+    out.append("**Модели.** ARIMA (основная): порядок интегрирования d по тесту Дики–Фуллера на уровне 5%, p и q по AIC, "
+               "при d = 1 без дрейфа. ARIMA + KASE: та же модель того же порядка на той же выборке с доходностью индекса как "
+               "внешним фактором. Для сравнения оставлена ARIMA по сетке порядков [A1] на всей истории роста, где d = 1 всегда. AR(1), AR(1) + KASE, логистическая регрессия, "
                "случайный лес, градиентный бустинг. Проверка вне выборки расширяющимся окном. Признаки машинного "
                "обучения: рост в предыдущем периоде, средний темп и стандартное отклонение роста за "
                f"{att.ROLL['annual']} года ({att.ROLL['quarterly']} квартала), доходность KASE.\n")
@@ -62,7 +63,8 @@ def main() -> None:
         for note in r.notes:
             out.append(f"> {note}\n")
         out.append(md(r.metrics, 3, "Модель") + "\n")
-        out.append(f"Диболд–Мариано, AR(1) против AR(1) + KASE: {num(d['dm_ar_vs_kase'][0], 2)}, p = {num(d['dm_ar_vs_kase'][1], 3)} "
+        out.append(f"Диболд–Мариано, ARIMA против ARIMA + KASE: {num(d['dm_arima_vs_arimax'][0], 2)}, p = {num(d['dm_arima_vs_arimax'][1], 3)}; "
+                   f"AR(1) против AR(1) + KASE: {num(d['dm_ar_vs_kase'][0], 2)}, p = {num(d['dm_ar_vs_kase'][1], 3)} "
                    "(положительное значение: модель с индексом точнее).\n")
         if definition != "panel" and not (definition == "accel" and freq == "quarterly") and not (definition == "sign" and freq == "annual"):
             out.append("Уравнение роста g(t) = c + a·g(t−1) + b·KASE, ошибки Ньюи–Уэста:\n")
@@ -77,8 +79,9 @@ def main() -> None:
             out.append("Качество на всех странах панели за те же годы:\n")
             out.append(md(r.panel, 3, "Модель") + "\n")
         if s["available"]:
-            out.append(f"Сигнал на {s['period']}: A = {s['value']}, P(A = 1) = {num(s['probs']['AR(1) + KASE'], 2)}, "
-                       f"прогноз роста {num(s['growth']['AR(1) + KASE'], 1)}% (ARIMA {num(s['growth']['ARIMA'], 1)}%).\n")
+            out.append(f"Сигнал на {s['period']}: A = {s['value']}, P(A = 1) = {num(s['probs']['ARIMA + KASE'], 2)}, "
+                       f"прогноз роста {num(s['growth']['ARIMA + KASE'], 1)}% (ARIMA без индекса {num(s['growth']['ARIMA'], 1)}%, "
+                       f"AR(1) + KASE {num(s['growth']['AR(1) + KASE'], 1)}%).\n")
         t = r.metrics.reset_index(names="model")
         t.insert(0, "freq", r.freq)
         t.insert(0, "definition", definition)

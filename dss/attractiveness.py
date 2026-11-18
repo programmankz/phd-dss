@@ -10,8 +10,9 @@ otherwise. The user chooses the definition:
 
 Every forecast of period t uses only information available before t: growth up to t-1 and the
 return of the KASE index over ``window_months`` ending on the last trading day before t.
-The reference model is ARIMA (d by the Dickey-Fuller test, p and q by AIC; the grid of [A1] is kept
-for comparison); AR(1) with and without the KASE return shows what the index adds;
+The main model is ARIMA (d by the Dickey-Fuller test, p and q by AIC); ARIMA + KASE is the same
+model with the index return as an exogenous regressor, estimated on the same sample. The ARIMA grid
+of [A1] on the full growth history is kept for comparison; AR(1) with and without the KASE return shows what the index adds;
 logistic regression, random forest and gradient boosting are the machine learning models. All
 models are compared out of sample on an expanding window. Nothing here is tuned on the sample.
 """
@@ -42,7 +43,8 @@ FEATURES = ["g_lag1", "g_mean", "g_std", "kase"]
 FEATURE_LABELS = {"g_lag1": "Рост в предыдущем периоде", "g_mean": "Средний темп роста",
                   "g_std": "Разброс темпа роста (ст. откл.)", "kase": "Доходность индекса KASE"}
 ARIMA_REF = "ARIMA, сетка [A1]"
-REG_MODELS = ("ARIMA", ARIMA_REF, "AR(1)", "AR(1) + KASE")
+ARIMAX = "ARIMA + KASE"
+REG_MODELS = ("ARIMA", ARIMAX, ARIMA_REF, "AR(1)", "AR(1) + KASE")
 ARIMA_GRID = {0: ((1, 0), (2, 0), (1, 1), (2, 1)), 1: ((0, 1), (1, 0), (2, 0), (1, 1))}   # (p, q) by order of integration
 CLUSTER_START = 2000         # country clustering period starts with the KASE index
 ML_MODELS = ("Логистическая регрессия", "Случайный лес", "Градиентный бустинг")
@@ -160,40 +162,56 @@ def adf_stat(y: np.ndarray) -> tuple[float, float]:
     return float(r["beta"][1] / plain_se[1]), float(-2.8621 - 2.738 / n - 8.36 / n ** 2)
 
 
-def _arma_css(y: np.ndarray, p: int, q: int) -> dict:
-    """ARMA(p, q) with a constant by conditional least squares (q in {0, 1}); one-step forecast."""
+def _arma_css(y: np.ndarray, p: int, q: int, x: np.ndarray | None = None, x_next: float = 0.0,
+              const: bool = True) -> dict:
+    """ARMA(p, q) with an optional constant and exogenous regressor by conditional least squares
+    (q in {0, 1}); one-step forecast (``x_next`` is the regressor of the forecast period)."""
     from scipy.optimize import least_squares
     y = np.asarray(y, float)
     n = len(y)
+    k = 0 if x is None else 1
+    xv = np.zeros(n) if x is None else np.asarray(x, float)
 
     def resid(theta):
-        c, phi, ma = theta[0], theta[1:1 + p], (theta[1 + p] if q else 0.0)
+        c, phi, ma = theta[0] * const, theta[1:1 + p], (theta[1 + p] if q else 0.0)
+        beta = theta[-1] if k else 0.0
         e = np.zeros(n)
         for t in range(p, n):
-            e[t] = y[t] - c - phi @ y[t - p:t][::-1] - ma * e[t - 1]
+            e[t] = y[t] - c - phi @ y[t - p:t][::-1] - beta * xv[t] - ma * e[t - 1]
         return e[p:]
 
-    start = np.r_[y.mean(), np.zeros(p + q)]
-    lo, hi = np.r_[-np.inf, -0.99 * np.ones(p + q)], np.r_[np.inf, 0.99 * np.ones(p + q)]
+    start = np.r_[y.mean() * const, np.zeros(p + q + k)]
+    lo = np.r_[-np.inf, -0.99 * np.ones(p + q), -np.inf * np.ones(k)]
+    hi = np.r_[np.inf, 0.99 * np.ones(p + q), np.inf * np.ones(k)]
     sol = least_squares(resid, start, bounds=(lo, hi))
     e = resid(sol.x)
     m = len(e)
     sigma2 = float(e @ e / m)
-    c, phi, ma = sol.x[0], sol.x[1:1 + p], (sol.x[1 + p] if q else 0.0)
-    fc = float(c + phi @ y[n - p:][::-1] + ma * e[-1])
-    return {"aic": m * np.log(sigma2) + 2 * (p + q + 2), "forecast": fc, "sigma": float(np.sqrt(sigma2))}
+    c, phi, ma = sol.x[0] * const, sol.x[1:1 + p], (sol.x[1 + p] if q else 0.0)
+    beta = float(sol.x[-1]) if k else 0.0
+    fc = float(c + phi @ y[n - p:][::-1] + beta * x_next + ma * e[-1])
+    return {"aic": m * np.log(sigma2) + 2 * (p + q + k + 1 + const), "forecast": fc, "sigma": float(np.sqrt(sigma2)), "beta": beta}
 
 
-def arima_forecast(y: np.ndarray) -> dict:
-    """ARIMA(p, d, q): d by the Dickey-Fuller test at 5%, p and q by AIC within ``ARIMA_GRID[d]``."""
+def arima_forecast(y: np.ndarray, x: np.ndarray | None = None, x_next: float | None = None) -> dict:
+    """ARIMA(p, d, q): d by the Dickey-Fuller test at 5%, p and q by AIC within ``ARIMA_GRID[d]``.
+    With ``x`` (aligned with ``y``) and ``x_next`` the same order is re-estimated with the regressor
+    (ARIMAX); for d = 1 the regressor is differenced as well. Returns both forecasts."""
     y = np.asarray(y, float)
     stat, crit = adf_stat(y)
     d = 0 if stat < crit else 1
     z = y if d == 0 else np.diff(y)
-    fits = {(p, q): _arma_css(z, p, q) for p, q in ARIMA_GRID[d]}
+    const = d == 0                      # no drift in the differenced model, as in [A1]
+    fits = {(p, q): _arma_css(z, p, q, const=const) for p, q in ARIMA_GRID[d]}
     (p, q), best = min(fits.items(), key=lambda kv: kv[1]["aic"])
-    return {"order": (p, d, q), "forecast": best["forecast"] + (y[-1] if d else 0.0), "sigma": best["sigma"],
-            "adf": stat, "adf_crit": crit}
+    out = {"order": (p, d, q), "forecast": best["forecast"] + (y[-1] if d else 0.0), "sigma": best["sigma"],
+           "adf": stat, "adf_crit": crit}
+    if x is not None:
+        x = np.asarray(x, float)
+        zx, nxt = (x, float(x_next)) if d == 0 else (np.diff(x), float(x_next) - x[-1])
+        ex = _arma_css(z, p, q, zx, nxt, const=const)
+        out.update(forecast_x=ex["forecast"] + (y[-1] if d else 0.0), sigma_x=ex["sigma"], beta=ex["beta"])
+    return out
 
 
 def _auc(y: np.ndarray, p: np.ndarray) -> float:
@@ -229,8 +247,10 @@ def _step(definition: str, hist: pd.Series, train: pd.DataFrame, x: pd.Series, s
         fit, _ = macro.arima_select(hist.to_numpy(float), 1)
     sd = float((fit.upper[0] - fit.lower[0]) / 3.92)
     out[ARIMA_REF] = (float(fit.forecast[0]), _prob(definition, float(fit.forecast[0]), sd, prev))
-    own = arima_forecast(hist.to_numpy(float))
+    # ARIMA and ARIMA + KASE share the sample (periods with the index), the order and the estimator
+    own = arima_forecast(np.r_[train["g"].to_numpy(float)], train["kase"].to_numpy(float), float(x["kase"]))
     out["ARIMA"] = (own["forecast"], _prob(definition, own["forecast"], own["sigma"], prev))
+    out[ARIMAX] = (own["forecast_x"], _prob(definition, own["forecast_x"], own["sigma_x"], prev))
     for name, cols in (("AR(1)", ["g_lag1"]), ("AR(1) + KASE", ["g_lag1", "kase"])):
         r = ols_hac(train["g"].to_numpy(float), train[cols].to_numpy(float), lags=0)
         mean = float(r["beta"][0] + r["beta"][1:] @ x[cols].to_numpy(float))
@@ -303,16 +323,19 @@ def _diagnostics(data: pd.DataFrame, g: pd.Series, means: pd.DataFrame) -> dict:
     full = ols_hac(data["g"].to_numpy(float), data[["g_lag1", "kase"]].to_numpy(float))
     e = full["resid"]
     half = len(data) // 2
-    dm = (diebold_mariano((means["AR(1)"] - g.reindex(means.index)).to_numpy(float),
-                          (means["AR(1) + KASE"] - g.reindex(means.index)).to_numpy(float))
-          if len(means) else (np.nan, np.nan))
+    def _dm(a, b):
+        return (diebold_mariano((means[a] - g.reindex(means.index)).to_numpy(float),
+                                (means[b] - g.reindex(means.index)).to_numpy(float))
+                if len(means) else (np.nan, np.nan))
+    dm = _dm("AR(1)", "AR(1) + KASE")
     return {"arch_lm": arch_lm(e, 1), "breusch_pagan": breusch_pagan(e, data[["g_lag1", "kase"]].to_numpy(float)),
             "std_first_half": float(data["g"].iloc[:half].std(ddof=1)),
             "std_second_half": float(data["g"].iloc[half:].std(ddof=1)),
             "split": str(data.index[half]), "mean_growth": float(data["g"].mean()),
             "std_growth": float(data["g"].std(ddof=1)), "r2": full["r2"], "dm_ar_vs_kase": dm,
             "n": int(len(data)), "share_positive": float(data["y"].mean()),
-            "arima": arima_forecast(g.to_numpy(float))}
+            "dm_arima_vs_arimax": _dm("ARIMA", ARIMAX),
+            "arima": arima_forecast(data["g"].to_numpy(float), data["kase"].to_numpy(float), 0.0)}
 
 
 def _coefficients(data: pd.DataFrame) -> pd.DataFrame:
@@ -362,7 +385,7 @@ def _signal(definition: str, data: pd.DataFrame, g: pd.Series, index: pd.Series,
     probs = pd.Series({name: v[1] for name, v in res.items()})
     return {"period": str(period), "available": True, "x": x, "probs": probs,
             "growth": pd.Series({name: v[0] for name, v in res.items() if name in REG_MODELS}),
-            "contributions": contrib, "value": int(probs["AR(1) + KASE"] >= 0.5)}
+            "contributions": contrib, "value": int(probs[ARIMAX] >= 0.5)}
 
 
 def _panel(gdp_wide: pd.DataFrame, country: str, first_test: int, seed: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series]:

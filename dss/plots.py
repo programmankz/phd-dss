@@ -261,7 +261,7 @@ def allocation(alloc: pd.DataFrame) -> str:
 
 
 # ---------------------------------------------------------------- investment attractiveness
-def attractiveness(res, model: str = "AR(1) + KASE") -> str:
+def attractiveness(res, model: str = "ARIMA + KASE") -> str:
     """Growth and the KASE return before each period (top); out-of-sample P(A = 1) and the outcome (bottom)."""
     d, p = res.data, res.probs
     x = d.index.to_timestamp()

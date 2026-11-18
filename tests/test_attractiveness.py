@@ -49,7 +49,7 @@ def test_forecasts_do_not_use_the_future():
 
 def test_run_returns_a_complete_result_on_synthetic_data():
     r = att.run("accel", "annual", growth=_annual(), index=_index())
-    assert set(att.REG_MODELS) <= set(r.metrics.index) and att.BASE in r.metrics.index
+    assert set(att.REG_MODELS) <= set(r.metrics.index) and att.BASE in r.metrics.index and att.ARIMAX in r.means
     assert r.metrics["Точность"].between(0, 1).all() and r.probs.stack().between(0, 1).all()
     assert r.signal["available"] and r.signal["value"] in (0, 1)
     assert len(r.coefficients) == 3 and (r.coefficients["Ст. ошибка (HAC)"] > 0).all()
@@ -91,6 +91,15 @@ def test_arima_order_of_integration_follows_the_unit_root_test():
     assert att.arima_forecast(stationary)["order"][1] == 0
     assert att.arima_forecast(walk)["order"][1] == 1
     assert abs(att.arima_forecast(stationary)["forecast"] - 4) < 1.0
+
+
+def test_arimax_uses_the_regressor_and_keeps_the_order():
+    rng = np.random.default_rng(17)
+    x = rng.normal(0, 10, 81)
+    y = 4 + 0.2 * x[:80] + rng.normal(0, 0.5, 80)
+    f = att.arima_forecast(y, x[:80], x[80])
+    assert f["order"][1] == 0 and abs(f["beta"] - 0.2) < 0.03
+    assert abs(f["forecast_x"] - (4 + 0.2 * x[80])) < 0.6 and f["sigma_x"] < f["sigma"]
 
 
 def test_country_clusters_separate_two_groups():

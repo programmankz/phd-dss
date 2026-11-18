@@ -18,9 +18,9 @@
 {% set s = a.signal %}
 {% if s.available %}
 <div class="grid g4">
-  <div class="kpi m1"><div class="v">{{ s.value }}</div><div class="l">показатель A на {{ s.period }}, модель AR(1) + KASE</div></div>
-  <div class="kpi m1"><div class="v">{{ fmt(s.probs['AR(1) + KASE'], 'pct', 0) }}</div><div class="l">вероятность A = 1</div></div>
-  <div class="kpi m1"><div class="v">{{ fmt(s.growth['AR(1) + KASE'], 'num', 1) }}%</div><div class="l">прогноз роста ВВП (ARIMA: {{ fmt(s.growth['ARIMA'], 'num', 1) }}%)</div></div>
+  <div class="kpi m1"><div class="v">{{ s.value }}</div><div class="l">показатель A на {{ s.period }}, модель ARIMA + KASE</div></div>
+  <div class="kpi m1"><div class="v">{{ fmt(s.probs['ARIMA + KASE'], 'pct', 0) }}</div><div class="l">вероятность A = 1</div></div>
+  <div class="kpi m1"><div class="v">{{ fmt(s.growth['ARIMA + KASE'], 'num', 1) }}%</div><div class="l">прогноз роста ВВП (без индекса: {{ fmt(s.growth['ARIMA'], 'num', 1) }}%)</div></div>
   <div class="kpi m1"><div class="v">{{ ('%+.1f' % s.x['kase']).replace('.', ',') }}%</div><div class="l">индекс KASE за {{ a.window_months }} мес. до периода</div></div>
 </div>
 {% else %}
@@ -30,8 +30,8 @@
 <h2>Данные и проверка вне выборки</h2>
 <figure class="fig panel"><img alt="Рост ВВП и индекс KASE" src="data:image/png;base64,{{ img }}"></figure>
 <div class="grid g2" style="margin-top:14px">
-  <div><h3>Сравнение моделей вне выборки</h3>{{ table(a.metrics, d=3, index_name='Модель', highlight='AR(1) + KASE') | safe }}
-    <p class="note">Расширяющееся окно, {{ a.probs.index[0] }} – {{ a.probs.index[-1] }}, {{ a.probs|length }} прогнозов. Доля A = 1 в данных: {{ fmt(a.diagnostics.share_positive, 'pct', 0) }}. Тест Диболда–Мариано, AR(1) против AR(1) + KASE: статистика {{ fmt(a.diagnostics.dm_ar_vs_kase[0], 'num', 2) }}, p = {{ fmt(a.diagnostics.dm_ar_vs_kase[1], 'num', 3) }} (положительная статистика означает, что модель с индексом точнее).</p></div>
+  <div><h3>Сравнение моделей вне выборки</h3>{{ table(a.metrics, d=3, index_name='Модель', highlight='ARIMA + KASE') | safe }}
+    <p class="note">Расширяющееся окно, {{ a.probs.index[0] }} – {{ a.probs.index[-1] }}, {{ a.probs|length }} прогнозов. Доля A = 1 в данных: {{ fmt(a.diagnostics.share_positive, 'pct', 0) }}. Тест Диболда–Мариано: ARIMA против ARIMA + KASE {{ fmt(a.diagnostics.dm_arima_vs_arimax[0], 'num', 2) }} (p = {{ fmt(a.diagnostics.dm_arima_vs_arimax[1], 'num', 3) }}); AR(1) против AR(1) + KASE {{ fmt(a.diagnostics.dm_ar_vs_kase[0], 'num', 2) }} (p = {{ fmt(a.diagnostics.dm_ar_vs_kase[1], 'num', 3) }}). Положительная статистика означает, что модель с индексом точнее. ARIMA и ARIMA + KASE имеют один порядок (d по тесту Дики–Фуллера) и одну выборку; AR(1) — это ARIMA(1,0,0).</p></div>
   <div><h3>Вероятности на {{ s.period }} по моделям</h3>
     {% if s.available %}{{ table(s.probs.to_frame('P(A = 1)'), d=2, index_name='Модель') | safe }}{% endif %}</div>
 </div>
