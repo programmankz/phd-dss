@@ -258,3 +258,32 @@ def allocation(alloc: pd.DataFrame) -> str:
     ax.set_title("Рекомендуемая структура портфеля, %")
     ax.grid(axis="y", visible=False)
     return to_b64(fig)
+
+
+# ---------------------------------------------------------------- investment attractiveness
+def attractiveness(res, model: str = "AR(1) + KASE") -> str:
+    """Growth and the KASE return before each period (top); out-of-sample P(A = 1) and the outcome (bottom)."""
+    d, p = res.data, res.probs
+    x = d.index.to_timestamp()
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(8, 5.2), sharex=True, gridspec_kw={"height_ratios": [3, 2]})
+    a1.bar(x, d["kase"], width=60 if res.freq == "quarterly" else 220, color=G4, label="Доходность индекса KASE, % (правая ось)")
+    a1.set_ylabel("KASE, %")
+    b = a1.twinx()
+    b.plot(x, d["g"], color=NAVY, lw=2, marker="o", ms=3, label="Рост ВВП, % г/г")
+    b.axhline(0, color=MUTED, lw=0.8)
+    b.grid(False)
+    b.set_ylabel("ВВП, %")
+    a1.set_title("Рост ВВП и доходность индекса KASE перед периодом")
+    h1, l1 = a1.get_legend_handles_labels()
+    h2, l2 = b.get_legend_handles_labels()
+    a1.legend(h2 + h1, [l2[0], "Доходность индекса KASE, %"], loc="upper right", fontsize=8)
+    if len(p) and model in p:
+        xp = p.index.to_timestamp()
+        a2.plot(xp, p[model], color=NAVY, lw=1.8, marker="o", ms=3, label=f"P(A = 1), {model}")
+        y = d["y"].reindex(p.index)
+        a2.scatter(xp, y, color=G2, s=14, zorder=3, label="Факт: A = 1 или 0")
+        a2.axhline(0.5, color=MUTED, lw=0.8, ls="--")
+        a2.set_ylim(-0.08, 1.08)
+        a2.legend(loc="lower left", fontsize=8)
+    a2.set_title("Показатель привлекательности вне выборки")
+    return to_b64(fig)

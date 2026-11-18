@@ -4,6 +4,7 @@ Run:  python -m webapp.app            -> http://127.0.0.1:8050
 """
 from __future__ import annotations
 
+import functools
 import html
 import os
 import sys
@@ -183,6 +184,30 @@ RESULTS = Path(__file__).resolve().parents[1] / "docs" / "results"
 MODULE_RU = {"I": "I — макроправило d", "II": "II — валютное правило h", "III": "III — кластерные лимиты",
              "IV": "IV — сигналы"}
 METRIC_RU = {"sharpe": "Шарп", "max_drawdown": "Макс. просадка"}
+
+
+@functools.lru_cache(maxsize=16)
+def _attractiveness(definition: str, freq: str, window: int):
+    from dss import attractiveness
+    return attractiveness.run(definition, freq, window)
+
+
+@app.route("/attract")
+def attract_page():
+    from dss import attractiveness
+    c = context("attract")
+    a = request.args
+    definition = a.get("adef", "sign") if a.get("adef", "sign") in attractiveness.DEFINITIONS else "sign"
+    freq = a.get("afreq") if a.get("afreq") in attractiveness.FREQS else attractiveness.DEFINITIONS[definition]["freq"]
+    if definition == "panel":
+        freq = "annual"
+    try:
+        window = min(max(int(a.get("awin", attractiveness.WINDOW_MONTHS)), 1), 24)
+    except ValueError:
+        window = attractiveness.WINDOW_MONTHS
+    res = _attractiveness(definition, freq, window)
+    c.update(a=res, defs=attractiveness.DEFINITIONS, freqs=attractiveness.FREQS, img=plots.attractiveness(res))
+    return render_template("attract.html", **c)
 
 
 def _csv(name: str) -> pd.DataFrame | None:
