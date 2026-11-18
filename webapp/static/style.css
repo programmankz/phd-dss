@@ -28,7 +28,20 @@ main { padding: 22px 32px 48px; max-width: 1280px; }
 .demo { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--navy); color: var(--ink); padding: 8px 14px; border-radius: 6px; font-size: 13.5px; margin-bottom: 14px; }
 .demo b { color: var(--navy); }
 
-form.controls { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 22px; }
+form.controls { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 22px; }
+.controls .grp { border: 0; margin: 0; padding: 0; min-width: 0; }
+.controls legend { padding: 0; margin-bottom: 6px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--navy); }
+.controls legend .mod { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); margin-left: 4px; }
+.controls .row { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.controls .actions { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin-left: auto; }
+.controls .reset { font-size: 13px; color: var(--muted); }
+.controls details.adv { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.controls details.adv > summary { cursor: pointer; font-size: 13.5px; font-weight: 700; color: var(--navy); width: fit-content; }
+.controls .adv-note { font-weight: 400; color: var(--muted); margin-left: 6px; }
+.controls .grps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px 22px; margin-top: 10px; }
+.controls .grps .grp { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.controls label { max-width: 100%; }
+.controls select { max-width: 100%; }
 .controls label { display: flex; flex-direction: column; font-size: 12.5px; color: var(--muted); gap: 3px; }
 .controls select, .controls input[type=number] { font: inherit; font-size: 14px; padding: 5px 8px; border: 1px solid #BFC8D8; border-radius: 6px; background: #fff; color: var(--ink); min-width: 120px; }
 .controls input[type=number] { width: 84px; min-width: 0; }

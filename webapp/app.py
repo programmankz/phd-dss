@@ -30,22 +30,17 @@ MODEL_SETS = {
 REBALANCE = {"D": "ежедневно", "W": "еженедельно", "M": "ежемесячно"}
 
 
+# Form defaults. The first three are the main choices; the rest are the calculation settings
+# shown in the collapsible block of the form (opened when one of them differs from the default).
+DEFAULTS = {"profile": "moderate", "scenario": "base", "universe": "kase", "models": "fast", "rebalance": "W",
+            "tc": "10", "cov": "ledoit_wolf", "fuzzy": "0", "protocol": "walk_forward", "caps": "1",
+            "limits": "relax", "rules": "expert"}
+ADVANCED = ("models", "protocol", "rebalance", "tc", "caps", "cov", "limits", "fuzzy", "rules")
+
+
 def settings_from_request() -> tuple[config.Settings, dict]:
     a = request.args
-    raw = {
-        "profile": a.get("profile", "moderate"),
-        "scenario": a.get("scenario", "base"),
-        "universe": a.get("universe", "kase"),
-        "models": a.get("models", "fast"),
-        "rebalance": a.get("rebalance", "W"),
-        "tc": a.get("tc", "10"),
-        "cov": a.get("cov", "ledoit_wolf"),
-        "fuzzy": a.get("fuzzy", "0"),
-        "protocol": a.get("protocol", "walk_forward"),
-        "caps": a.get("caps", "1"),
-        "limits": a.get("limits", "relax"),
-        "rules": a.get("rules", "expert"),
-    }
+    raw = {k: a.get(k, v) for k, v in DEFAULTS.items()}
     if raw["rules"] not in ("expert", "derived"):
         raw["rules"] = "expert"
     if raw["profile"] not in config.PROFILES:
@@ -106,7 +101,8 @@ def context(page: str):
     res = pipeline.run(st)
     qs = "&".join(f"{k}={v}" for k, v in raw.items())
     paper_qs = "&".join(f"{k}={v}" for k, v in (raw | config.PAPER_PRESET).items())
-    return {"page": page, "r": res, "st": st, "raw": raw, "qs": qs, "paper_qs": paper_qs,
+    adv_changed = [k for k in ADVANCED if (st.tc_bps != float(DEFAULTS[k]) if k == "tc" else str(raw[k]) != DEFAULTS[k])]
+    return {"page": page, "r": res, "st": st, "raw": raw, "qs": qs, "paper_qs": paper_qs, "adv_changed": adv_changed,
             "tf": tensorflow_available()}
 
 
