@@ -192,6 +192,12 @@ def _attractiveness(definition: str, freq: str, window: int):
     return attractiveness.run(definition, freq, window)
 
 
+@functools.lru_cache(maxsize=8)
+def _clusters(k: int):
+    from dss import attractiveness
+    return attractiveness.country_clusters(k=k)
+
+
 @app.route("/attract")
 def attract_page():
     from dss import attractiveness
@@ -206,7 +212,13 @@ def attract_page():
     except ValueError:
         window = attractiveness.WINDOW_MONTHS
     res = _attractiveness(definition, freq, window)
-    c.update(a=res, defs=attractiveness.DEFINITIONS, freqs=attractiveness.FREQS, img=plots.attractiveness(res))
+    try:
+        k = min(max(int(a.get("ak", 2)), 2), 6)
+    except ValueError:
+        k = 2
+    cl = _clusters(k)
+    c.update(a=res, defs=attractiveness.DEFINITIONS, freqs=attractiveness.FREQS, img=plots.attractiveness(res),
+             cl=cl, img_cl=plots.growth_clusters(cl))
     return render_template("attract.html", **c)
 
 

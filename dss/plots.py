@@ -287,3 +287,20 @@ def attractiveness(res, model: str = "AR(1) + KASE") -> str:
         a2.legend(loc="lower left", fontsize=8)
     a2.set_title("Показатель привлекательности вне выборки")
     return to_b64(fig)
+
+
+def growth_clusters(clusters: dict, country: str = "Kazakhstan", label: str = "Казахстан") -> str:
+    """Countries by the mean and the standard deviation of growth, coloured by cluster."""
+    t = clusters["table"]
+    fig, ax = plt.subplots(figsize=(6.4, 3.8))
+    shades = [G4, NAVY, G2, G1, MUTED, TEXT]
+    for c, part in t.groupby("cluster"):
+        ax.scatter(part["std"], part["mean"], s=16, color=shades[(c - 1) % len(shades)], label=f"Кластер {c} ({len(part)})")
+    if country in t.index:
+        ax.scatter(t.loc[country, "std"], t.loc[country, "mean"], s=90, facecolor="none", edgecolor="#C77700", lw=2)
+        ax.annotate(label, (t.loc[country, "std"], t.loc[country, "mean"]), textcoords="offset points", xytext=(8, 6), color="#C77700")
+    ax.set_xlim(0, min(float(t["std"].max()) * 1.05, 20))
+    ax.set_xlabel("Стандартное отклонение роста, п.п.")
+    ax.set_ylabel("Средний темп роста, %")
+    ax.legend(fontsize=8, loc="lower right")
+    return to_b64(fig)

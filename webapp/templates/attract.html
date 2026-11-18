@@ -10,6 +10,7 @@
   <label>Данные
     <select name="afreq">{% for k, v in freqs.items() %}<option value="{{ k }}" {{ 'selected' if k == a.freq }}>{{ v }}</option>{% endfor %}</select></label>
   <label>Окно доходности KASE, мес.<input type="number" min="1" max="24" step="1" name="awin" value="{{ a.window_months }}"></label>
+  <label>Число кластеров стран<input type="number" min="2" max="6" step="1" name="ak" value="{{ cl.k }}"></label>
   <button class="btn" type="submit">Рассчитать</button>
 </form>
 {% for n in a.notes %}<p class="note"><b>Внимание.</b> {{ n }}</p>{% endfor %}
@@ -58,6 +59,13 @@
       <tr><th scope="row">Ст. откл. роста с {{ a.diagnostics.split }}, п.п.</th><td class="num">{{ fmt(a.diagnostics.std_second_half, 'num', 2) }}</td><td></td></tr>
     </tbody></table></div>
     <p class="note">Малое p означает, что дисперсия остатков непостоянна. Выводы о значимости в любом случае сделаны по устойчивым ошибкам.</p></div>
+</div>
+<h2>Кластеры стран по среднему темпу и разбросу роста</h2>
+<div class="grid g2">
+  <figure class="fig panel"><img alt="Кластеры стран" src="data:image/png;base64,{{ img_cl }}"></figure>
+  <div>{{ table(cl.profiles.rename(columns={'countries': 'Стран', 'mean': 'Средний темп роста, %', 'std': 'Ст. откл. роста, п.п.'}), d=2, index_name='Кластер', highlight=cl.country_cluster) | safe }}
+    <h3 style="margin-top:12px">Силуэт по числу кластеров</h3>{{ table(cl.silhouette.to_frame('Силуэт'), d=3, index_name='Кластеров') | safe }}
+    <p class="note">K-means по стандартизованным среднему и стандартному отклонению годового роста с {{ cl.start }} г. Казахстан в кластере {{ cl.country_cluster }}. В статье [A1] кластеров четыре и добавлена асимметрия; здесь число кластеров задаёт пользователь, по умолчанию 2 (наибольший силуэт).</p></div>
 </div>
 {% if a.panel is not none %}
 <h2>Панель стран: качество на всех странах</h2>

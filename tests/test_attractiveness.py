@@ -82,3 +82,22 @@ def test_parse_quarterly_gdp_sheet():
     s = loaders.parse_stat_quarterly_gdp({"3": sheet})
     assert list(s.index.astype(str)) == ["2011Q1", "2011Q2", "2011Q3", "2011Q4"]
     assert s.iloc[0] == pytest.approx(6.2) and s.iloc[-1] == pytest.approx(-0.6)
+
+
+def test_arima_order_of_integration_follows_the_unit_root_test():
+    rng = np.random.default_rng(11)
+    stationary = 4 + rng.normal(0, 1, 80)
+    walk = np.cumsum(rng.normal(0, 1, 80))
+    assert att.arima_forecast(stationary)["order"][1] == 0
+    assert att.arima_forecast(walk)["order"][1] == 1
+    assert abs(att.arima_forecast(stationary)["forecast"] - 4) < 1.0
+
+
+def test_country_clusters_separate_two_groups():
+    rng = np.random.default_rng(13)
+    years = [str(y) for y in range(2000, 2025)]
+    calm = pd.DataFrame(2 + rng.normal(0, 1, (30, 25)), columns=years, index=[f"calm{i}" for i in range(30)])
+    fast = pd.DataFrame(7 + rng.normal(0, 5, (10, 25)), columns=years, index=[f"fast{i}" for i in range(9)] + ["Kazakhstan"])
+    cl = att.country_clusters(pd.concat([calm, fast]), k=2)
+    assert cl["country_cluster"] == 2 and cl["profiles"]["countries"].tolist() == [30, 10]
+    assert cl["silhouette"].idxmax() == 2

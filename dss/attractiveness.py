@@ -10,7 +10,8 @@ otherwise. The user chooses the definition:
 
 Every forecast of period t uses only information available before t: growth up to t-1 and the
 return of the KASE index over ``window_months`` ending on the last trading day before t.
-The reference model is ARIMA; AR(1) with and without the KASE return shows what the index adds;
+The reference model is ARIMA (d by the Dickey-Fuller test, p and q by AIC; the grid of [A1] is kept
+for comparison); AR(1) with and without the KASE return shows what the index adds;
 logistic regression, random forest and gradient boosting are the machine learning models. All
 models are compared out of sample on an expanding window. Nothing here is tuned on the sample.
 """
@@ -40,7 +41,10 @@ MIN_TRAIN = {"annual": 10, "quarterly": 24}
 FEATURES = ["g_lag1", "g_mean", "g_std", "kase"]
 FEATURE_LABELS = {"g_lag1": "Рост в предыдущем периоде", "g_mean": "Средний темп роста",
                   "g_std": "Разброс темпа роста (ст. откл.)", "kase": "Доходность индекса KASE"}
-REG_MODELS = ("ARIMA", "AR(1)", "AR(1) + KASE")
+ARIMA_REF = "ARIMA, сетка [A1]"
+REG_MODELS = ("ARIMA", ARIMA_REF, "AR(1)", "AR(1) + KASE")
+ARIMA_GRID = {0: ((1, 0), (2, 0), (1, 1), (2, 1)), 1: ((0, 1), (1, 0), (2, 0), (1, 1))}   # (p, q) by order of integration
+CLUSTER_START = 2000         # country clustering period starts with the KASE index
 ML_MODELS = ("Логистическая регрессия", "Случайный лес", "Градиентный бустинг")
 BASE = "Постоянный прогноз (доля в обучении)"
 
@@ -143,6 +147,55 @@ def diebold_mariano(e1: np.ndarray, e2: np.ndarray) -> tuple[float, float]:
     return float(dm), float(2 * stats.t.sf(abs(dm), n - 1))
 
 
+def adf_stat(y: np.ndarray) -> tuple[float, float]:
+    """Augmented Dickey-Fuller statistic (constant, one lagged difference) and the 5% critical value
+    from MacKinnon's response surface for the sample size."""
+    y = np.asarray(y, float)
+    dy = np.diff(y)
+    X = np.column_stack([y[1:-1], dy[:-1]])
+    r = ols_hac(dy[1:], X, lags=0)
+    n = len(dy) - 1
+    plain_se = r["sigma"] * np.sqrt(np.diag(np.linalg.inv(np.column_stack([np.ones(n), X]).T
+                                                          @ np.column_stack([np.ones(n), X]))))
+    return float(r["beta"][1] / plain_se[1]), float(-2.8621 - 2.738 / n - 8.36 / n ** 2)
+
+
+def _arma_css(y: np.ndarray, p: int, q: int) -> dict:
+    """ARMA(p, q) with a constant by conditional least squares (q in {0, 1}); one-step forecast."""
+    from scipy.optimize import least_squares
+    y = np.asarray(y, float)
+    n = len(y)
+
+    def resid(theta):
+        c, phi, ma = theta[0], theta[1:1 + p], (theta[1 + p] if q else 0.0)
+        e = np.zeros(n)
+        for t in range(p, n):
+            e[t] = y[t] - c - phi @ y[t - p:t][::-1] - ma * e[t - 1]
+        return e[p:]
+
+    start = np.r_[y.mean(), np.zeros(p + q)]
+    lo, hi = np.r_[-np.inf, -0.99 * np.ones(p + q)], np.r_[np.inf, 0.99 * np.ones(p + q)]
+    sol = least_squares(resid, start, bounds=(lo, hi))
+    e = resid(sol.x)
+    m = len(e)
+    sigma2 = float(e @ e / m)
+    c, phi, ma = sol.x[0], sol.x[1:1 + p], (sol.x[1 + p] if q else 0.0)
+    fc = float(c + phi @ y[n - p:][::-1] + ma * e[-1])
+    return {"aic": m * np.log(sigma2) + 2 * (p + q + 2), "forecast": fc, "sigma": float(np.sqrt(sigma2))}
+
+
+def arima_forecast(y: np.ndarray) -> dict:
+    """ARIMA(p, d, q): d by the Dickey-Fuller test at 5%, p and q by AIC within ``ARIMA_GRID[d]``."""
+    y = np.asarray(y, float)
+    stat, crit = adf_stat(y)
+    d = 0 if stat < crit else 1
+    z = y if d == 0 else np.diff(y)
+    fits = {(p, q): _arma_css(z, p, q) for p, q in ARIMA_GRID[d]}
+    (p, q), best = min(fits.items(), key=lambda kv: kv[1]["aic"])
+    return {"order": (p, d, q), "forecast": best["forecast"] + (y[-1] if d else 0.0), "sigma": best["sigma"],
+            "adf": stat, "adf_crit": crit}
+
+
 def _auc(y: np.ndarray, p: np.ndarray) -> float:
     pos, neg = p[y == 1], p[y == 0]
     if not len(pos) or not len(neg):
@@ -175,7 +228,9 @@ def _step(definition: str, hist: pd.Series, train: pd.DataFrame, x: pd.Series, s
         warnings.simplefilter("ignore")
         fit, _ = macro.arima_select(hist.to_numpy(float), 1)
     sd = float((fit.upper[0] - fit.lower[0]) / 3.92)
-    out["ARIMA"] = (float(fit.forecast[0]), _prob(definition, float(fit.forecast[0]), sd, prev))
+    out[ARIMA_REF] = (float(fit.forecast[0]), _prob(definition, float(fit.forecast[0]), sd, prev))
+    own = arima_forecast(hist.to_numpy(float))
+    out["ARIMA"] = (own["forecast"], _prob(definition, own["forecast"], own["sigma"], prev))
     for name, cols in (("AR(1)", ["g_lag1"]), ("AR(1) + KASE", ["g_lag1", "kase"])):
         r = ols_hac(train["g"].to_numpy(float), train[cols].to_numpy(float), lags=0)
         mean = float(r["beta"][0] + r["beta"][1:] @ x[cols].to_numpy(float))
@@ -256,7 +311,8 @@ def _diagnostics(data: pd.DataFrame, g: pd.Series, means: pd.DataFrame) -> dict:
             "std_second_half": float(data["g"].iloc[half:].std(ddof=1)),
             "split": str(data.index[half]), "mean_growth": float(data["g"].mean()),
             "std_growth": float(data["g"].std(ddof=1)), "r2": full["r2"], "dm_ar_vs_kase": dm,
-            "n": int(len(data)), "share_positive": float(data["y"].mean())}
+            "n": int(len(data)), "share_positive": float(data["y"].mean()),
+            "arima": arima_forecast(g.to_numpy(float))}
 
 
 def _coefficients(data: pd.DataFrame) -> pd.DataFrame:
@@ -378,3 +434,31 @@ def run(definition: str = "sign", freq: str | None = None, window_months: int = 
     return Attractiveness(definition, freq, window_months, data, probs, means, table, _coefficients(data),
                           _logit(data)[0], _lag_profile(g, index, window_months), _diagnostics(data, g, means),
                           signal, panel, notes)
+
+
+# --------------------------------------------------------------------------
+# Country clusters by the mean and the variability of growth
+# --------------------------------------------------------------------------
+def country_clusters(gdp_wide: pd.DataFrame | None = None, k: int = 2, start: int = CLUSTER_START,
+                     min_years: int = 20, country: str = config.TARGET_COUNTRY,
+                     seed: int = config.RANDOM_SEED) -> dict:
+    """K-means on the standardised mean and standard deviation of annual growth since ``start``.
+    Returns the country table, cluster profiles, the silhouette by number of clusters and the
+    cluster of ``country``. In [A1] the same clustering uses K = 4 and adds skewness."""
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+    wide = gdp_wide if gdp_wide is not None else loaders.load_gdp().frame
+    x = wide[[c for c in wide.columns if int(c) >= start]]
+    x = x[x.notna().sum(axis=1) >= min_years]
+    table = pd.DataFrame({"mean": x.mean(axis=1), "std": x.std(axis=1, ddof=1)})
+    z = ((table - table.mean()) / table.std(ddof=0)).to_numpy()
+    sil = {}
+    for kk in range(2, 7):
+        labels = KMeans(kk, n_init=20, random_state=seed).fit_predict(z)
+        sil[kk] = float(silhouette_score(z, labels))
+    labels = KMeans(k, n_init=20, random_state=seed).fit_predict(z)
+    order = pd.Series(table["mean"].groupby(labels).mean()).sort_values().index      # clusters by mean growth
+    table["cluster"] = pd.Series(labels, index=table.index).map({c: i + 1 for i, c in enumerate(order)})
+    profiles = table.groupby("cluster").agg(countries=("mean", "size"), mean=("mean", "mean"), std=("std", "mean"))
+    return {"table": table, "profiles": profiles, "silhouette": pd.Series(sil, name="silhouette"),
+            "k": k, "start": start, "country_cluster": int(table.loc[country, "cluster"]) if country in table.index else None}
