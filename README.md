@@ -92,6 +92,7 @@ python scripts/extended_universe.py      # разведочная проверк
 python scripts/attractiveness.py         # инвестиционная привлекательность: индекс KASE и рост ВВП → docs/attractiveness.md
 python -m dss.cli attract --definition accel   # sign | accel | panel; страница /attract в веб-интерфейсе
 python scripts/article_kase.py           # эксперимент статьи [A4] на KASE → docs/article_kase.md
+python scripts/original_a1.py               # ноутбук авторов статьи [A1] на её файле данных → docs/original_a1.md
 python scripts/original_a4_kase.py --report-only   # исходный код статьи [A4] на KASE → docs/original_a4_kase.md
 #   без --report-only заново обучает 11 моделей, для нейросетей нужен TensorFlow (pip install tensorflow)
 python -m dss.cli article --set seven    # nine | seven; страница /article в веб-интерфейсе
@@ -119,6 +120,7 @@ GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) на к�
 | `fx_rates.csv` | `Date,USD,EUR,CNY,RUB` (тенге за единицу) | `python -m dss.cli fetch fx` (НБ РК, с докачкой) | II |
 | `prices_kase.csv` | `Date,HSBK,KSPI,…` (цены закрытия) | `python -m dss.cli fetch kase` (графики kase.kz) или экспорт с kase.kz | III, IV |
 | `ohlcv_kase.csv` | `Date,Ticker,Open,High,Low,Close,Volume` (дневные свечи, объём в тенге) | `loaders.fetch_kase_ohlcv()` (графики kase.kz) | страница «Исходный код статьи [A4]» |
+| `world_gdp_data.csv` | `country_name,indicator_name,1980,…,2024` (IMF WEO, файл статьи [A1]) | получен от авторов статьи | `scripts/original_a1.py` |
 | `fundamentals_kase.csv` | `ticker,sector,PB,PE` | секторы — `fetch kase`; P/B, P/E — отчётность эмитентов | III |
 | `prices_nse.csv` | `Date,HDFCBANK.NS,…` | `python -m dss.cli fetch nse` (нужен `yfinance`) | III, IV |
 | `corporate_actions.csv` | `ticker,ex_date,method,factor,note` | вручную: сплиты, выделения, дивиденды (в репозитории — дивиденд KZTK 2025 г.; [SETUP, п. 4.6](docs/SETUP.md#46-корпоративные-события--corporate_actionscsv-необязательно)) | III, IV |
