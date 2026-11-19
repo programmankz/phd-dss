@@ -63,7 +63,25 @@ def main(argv=None) -> int:
                     help="sign: рост > 0; accel: ускорение роста; panel: рост > 0, обучение на панели стран")
     at.add_argument("--freq", default=None, choices=["annual", "quarterly"])
     at.add_argument("--window", type=int, default=6, help="окно доходности индекса KASE, мес.")
+    ar = sub.add_parser("article", help="эксперимент статьи [A4] на KASE (и на выборке NSE статьи)")
+    ar.add_argument("--universe", default="kase", choices=["kase", "nse"])
+    ar.add_argument("--set", dest="kase_set", default="nine", choices=["nine", "seven"],
+                    help="nine: 9 бумаг с 12.2022; seven: 7 бумаг с 12.2018 (без KSPI и KMGZ)")
     a = p.parse_args(argv)
+
+    if a.cmd == "article":
+        from . import replication
+        r = replication.run(a.universe, kase_set=a.kase_set)
+        i = r.info
+        with pd.option_context("display.width", 200, "display.max_columns", 20):
+            print(f"Протокол [A4], {replication.UNIVERSES[r.universe]}: {i['assets']} бумаг, данные "
+                  f"{i['data_start']:%d.%m.%Y} – {i['data_end']:%d.%m.%Y}, тест с {i['test_start']:%d.%m.%Y}, {i['bt_days']} дн.")
+            for note in r.notes:
+                print("Внимание:", note)
+            print(r.strategies.to_string(float_format=lambda v: num(v, 3), na_rep="—"), "\n")
+            print(r.models.to_string(float_format=lambda v: num(v, 4), na_rep="—"), "\n")
+            print(r.sharpe_tests[["sharpe", "diff", "p_value", "p_holm"]].to_string(float_format=lambda v: num(v, 3), na_rep="—"))
+        return 0
 
     if a.cmd == "attract":
         from . import attractiveness

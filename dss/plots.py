@@ -235,13 +235,13 @@ def model_ic(metrics: pd.DataFrame) -> str:
     return to_b64(fig)
 
 
-def equity_curves(curves: pd.DataFrame) -> str:
+def equity_curves(curves: pd.DataFrame, title: str = "Бэктест вне выборки: стоимость портфеля (база = 100), с учётом издержек") -> str:
     fig, ax = plt.subplots(figsize=(8, 3.6))
     cols = {"Signal Weighted": G2, "Max Signal-to-Risk": NAVY, "Min Variance": G3, "Equal Weighted": G4}
     for c in curves:
         ax.plot(curves.index, curves[c], lw=2 if c in ("Signal Weighted", "Max Signal-to-Risk") else 1.2,
                 color=cols.get(c, MUTED), ls="-" if c in cols else "--", label=c)
-    ax.set_title("Бэктест вне выборки: стоимость портфеля (база = 100), с учётом издержек")
+    ax.set_title(title)
     ax.legend(ncol=3, fontsize=8)
     return to_b64(fig)
 

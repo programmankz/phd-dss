@@ -91,6 +91,8 @@ python scripts/control_constant_shares.py # разведочный контро�
 python scripts/extended_universe.py      # разведочная проверка на расширенном наборе (KASE и AIX) → docs/extended_universe.md
 python scripts/attractiveness.py         # инвестиционная привлекательность: индекс KASE и рост ВВП → docs/attractiveness.md
 python -m dss.cli attract --definition accel   # sign | accel | panel; страница /attract в веб-интерфейсе
+python scripts/article_kase.py           # эксперимент статьи [A4] на KASE → docs/article_kase.md
+python -m dss.cli article --set seven    # nine | seven; страница /article в веб-интерфейсе
 ```
 
 ## Тесты и проверка стиля

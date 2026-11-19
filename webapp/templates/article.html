@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Статья [A4] на KASE{% endblock %}
+{% block content %}
+{% set i = kz.info %}{% set n = nse.info %}
+<h1><span class="rn m4" style="vertical-align:middle">≈</span> Эксперимент статьи [A4] на казахстанской бирже</h1>
+<p class="lede">Метод статьи «Machine Learning-Based Portfolio Optimization Using Cross-Sectional Signals: Evidence from the NSE Market» повторён без изменений, заменён только файл цен: вместо 20 акций индийской биржи NSE взяты акции KASE. Оба рынка считает один и тот же код.</p>
+<form method="get" class="controls" action="/article">
+  {% for k, v in raw.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <label>Набор бумаг KASE
+    <select name="kset">{% for k, d in sets.items() %}<option value="{{ k }}" {{ 'selected' if k == kset }}>{{ d.label }}</option>{% endfor %}</select></label>
+  <button class="btn" type="submit">Рассчитать</button>
+</form>
+{% for t in kz.notes %}<p class="note"><b>Внимание.</b> {{ t }}</p>{% endfor %}
+
+<div class="grid g4">
+  <div class="kpi m4"><div class="v">{{ fmt(kz.strategies.loc[best, 'annual_return'], 'pct', 1) }}</div><div class="l">годовая доходность лучшей стратегии на KASE ({{ best }})</div></div>
+  <div class="kpi m4"><div class="v">{{ fmt(kz.strategies.loc[best, 'sharpe'], 'num', 2) }}</div><div class="l">её коэффициент Шарпа при ставке 5%, как в статье</div></div>
+  <div class="kpi m4"><div class="v">{{ fmt(kz.strategies.loc['Equal Weighted', 'sharpe'], 'num', 2) }}</div><div class="l">Шарп равных весов на тех же днях</div></div>
+  <div class="kpi m4"><div class="v">{{ i.bt_days }}</div><div class="l">торговых дней в тестовой выборке ({{ i.bt_start.strftime('%d.%m.%Y') }} – {{ i.bt_end.strftime('%d.%m.%Y') }})</div></div>
+</div>
+
+<h2>Что повторено из статьи</h2>
+<div class="tbl"><table><thead><tr><th>Шаг метода</th><th>Статья [A4], NSE</th><th>Здесь, KASE</th></tr></thead><tbody>
+  <tr><th scope="row">Бумаги</th><td>20 акций NSE</td><td>{{ i.assets }} акций KASE, цены с дивидендами</td></tr>
+  <tr><th scope="row">Данные</th><td>{{ n.data_start.strftime('%d.%m.%Y') }} – {{ n.data_end.strftime('%d.%m.%Y') }}</td><td>{{ i.data_start.strftime('%d.%m.%Y') }} – {{ i.data_end.strftime('%d.%m.%Y') }}</td></tr>
+  <tr><th scope="row">Признаки</th><td colspan="2">лог-доходность, RSI(14), MACD и сигнальная линия, ATR(14), ширина полос Боллинджера, отношение к SMA(14), объём; масштабирование по обучающей выборке</td></tr>
+  <tr><th scope="row">Модели прогноза</th><td colspan="2">Linear, Ridge, Lasso, SVR, Decision Tree, Random Forest, Gradient Boosting; четыре нейросетевые модели статьи считаются при установленном TensorFlow</td></tr>
+  <tr><th scope="row">Разбиение</th><td colspan="2">одно хронологическое, 80% обучение и 20% тест</td></tr>
+  <tr><th scope="row">Сигнал</th><td colspan="2">среднее 10 последних прогнозов, ранги s = Rank(r̂)/N</td></tr>
+  <tr><th scope="row">Стратегии</th><td colspan="2">Signal Weighted, Max Signal-to-Risk, Min Variance, Equal Weighted; ежедневная ребалансировка, выборочная ковариация за 252 дня, без издержек, 0 ≤ w ≤ 1</td></tr>
+  <tr><th scope="row">Тестовая выборка</th><td>с {{ n.test_start.strftime('%d.%m.%Y') }}, {{ n.bt_days }} дн.</td><td>с {{ i.test_start.strftime('%d.%m.%Y') }}, {{ i.bt_days }} дн.</td></tr>
+</tbody></table></div>
+
+<h2>Итог: статья, NSE и KASE</h2>
+{{ table(summary, pct=('Годовая доходность', 'Волатильность'), d=2, index_name='Расчёт') | safe }}
+<p class="note">Опубликованная строка таблицы IV статьи: доходность 21,61%, волатильность 17,40%, Шарп 0,95. Расчёт СППР на данных NSE до 31.12.2025 эту строку не воспроизводит, подробности в docs/reproduction.md.</p>
+
+<h2>Стратегии на KASE</h2>
+<figure class="fig panel"><img alt="Стоимость портфелей на KASE" src="data:image/png;base64,{{ img }}"></figure>
+{{ table(kz_strategies, pct=spct, d=2, index_name='Стратегия', highlight=best) | safe }}
+<p class="note">Шарп при ставке 5% сопоставим со статьёй. При средней базовой ставке НБ РК за тестовый период ({{ fmt(i.local_rate, 'pct', 1) }}) он ниже: это доходность сверх тенгового депозита. Доля дней с ростом портфеля равных весов: {{ fmt(i.up_days, 'pct', 0) }}.</p>
+<h3>Отличается ли стратегия от равных весов</h3>
+{{ table(kz_tests, d=2, index_name='Стратегия') | safe }}
+<p class="note">Блочный бутстреп, {{ kz.sharpe_tests.attrs.n_days }} дней. Если p больше 0,05, преимущество над равными весами не подтверждено.</p>
+
+<h2>Те же стратегии на NSE</h2>
+{{ table(nse_strategies, pct=spct, d=2, index_name='Стратегия') | safe }}
+
+<h2>Модели прогноза вне выборки</h2>
+<h3>KASE</h3>
+{{ table(kz_models, pct=('Точность направления',), d=3, index_name='Модель') | safe }}
+<h3>NSE</h3>
+{{ table(nse_models, pct=('Точность направления',), d=3, index_name='Модель') | safe }}
+<p class="note">IC — ранговая корреляция прогноза и фактической доходности по бумагам за день. DM — тест Диболда–Мариано против прогноза «доходность равна нулю»: отрицательное значение означает, что модель точнее.</p>
+{% endblock %}
