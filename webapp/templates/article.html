@@ -10,6 +10,7 @@
     <select name="kset">{% for k, d in sets.items() %}<option value="{{ k }}" {{ 'selected' if k == kset }}>{{ d.label }}</option>{% endfor %}</select></label>
   <button class="btn" type="submit">Рассчитать</button>
 </form>
+<p class="note">Здесь строгая проверка вне выборки. Расчёт по исходному коду авторов статьи, шаг за шагом, показан на странице <a href="/article/original?{{ qs }}">«Исходный код статьи на KASE»</a>.</p>
 {% for t in kz.notes %}<p class="note"><b>Внимание.</b> {{ t }}</p>{% endfor %}
 
 <div class="grid g4">

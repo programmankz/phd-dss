@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Исходный код статьи [A4] на KASE{% endblock %}
+{% block content %}
+{% set i = r.info %}
+<h1><span class="rn m4" style="vertical-align:middle">≈</span> Исходный код статьи [A4] на данных KASE</h1>
+<p class="lede">Расчёт повторяет ноутбуки репозитория статьи (Data collection и Final_calc) шаг за шагом. Заменены только данные: дневные свечи акций KASE вместо 20 акций NSE. Гиперпараметры моделей взяты из ноутбука.</p>
+<form method="get" class="controls" action="/article/original">
+  {% for k, v in raw.items() %}{% if k not in ('kset', 'models') %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endif %}{% endfor %}
+  <label>Набор бумаг KASE
+    <select name="kset">{% for k, d in sets.items() %}<option value="{{ k }}" {{ 'selected' if k == kset }}>{{ d }}</option>{% endfor %}</select></label>
+  <label>Модели прогноза
+    <select name="models">{% for n in have %}<option value="{{ n }}" {{ 'selected' if n == models }}>{{ n }} моделей{{ ', с нейросетями' if n == 11 else ', без нейросетей' }}</option>{% endfor %}</select></label>
+  <button class="btn" type="submit">Рассчитать</button>
+</form>
+<p class="note"><b>Внимание.</b> Таблица IV статьи получается, если веса, найденные по прогнозам конца выборки, держать постоянными на всём периоде. Это расчёт внутри выборки: он показывает, как вели бы себя выбранные бумаги в прошлом, а не доходность, которую можно было получить заранее. Строгая проверка вне выборки находится на странице <a href="/article?{{ qs }}">«Статья [A4] на KASE»</a>.</p>
+
+<div class="grid g4">
+  <div class="kpi m4"><div class="v">{{ fmt(r.table.loc['Signal Weighted', 'annual_return'], 'pct', 1) }}</div><div class="l">годовая доходность Signal Weighted на KASE, как в статье</div></div>
+  <div class="kpi m4"><div class="v">{{ fmt(r.table.loc['Signal Weighted', 'sharpe'], 'num', 2) }}</div><div class="l">её коэффициент Шарпа при ставке 5% (в статье на NSE 0,95)</div></div>
+  <div class="kpi m4"><div class="v">{{ fmt(r.table.loc['Equal Weighted', 'sharpe'], 'num', 2) }}</div><div class="l">Шарп равных весов за тот же период (в статье 0,86)</div></div>
+  <div class="kpi m4"><div class="v">{{ i.days }}</div><div class="l">торговых дней ({{ i.start.strftime('%d.%m.%Y') }} – {{ i.end.strftime('%d.%m.%Y') }})</div></div>
+</div>
+
+<h2>Шаги исходного кода</h2>
+<div class="tbl"><table><thead><tr><th>Шаг</th><th>Как в коде статьи</th></tr></thead><tbody>
+  <tr><th scope="row">Признаки</th><td>Log_Ret, RSI(14), MACD, ATR(14), ширина полос Боллинджера, OBV, SMA(14), объём</td></tr>
+  <tr><th scope="row">Вход модели</th><td>окно 60 дней по 8 признакам, цель: доходность следующего дня; для каждой бумаги своя модель</td></tr>
+  <tr><th scope="row">Разбиение</th><td>хронологическое 80/20, масштабирование MinMax по обучающей части</td></tr>
+  <tr><th scope="row">Модели</th><td>Linear, Ridge, Lasso, SVR, Decision Tree, Random Forest, Gradient Boosting, RNN, LSTM, CNN-LSTM, LSTM-MLP</td></tr>
+  <tr><th scope="row">Выбор модели</th><td>наибольшее 0,6·точность направления + 0,4·(R² + 1)·50 на тестовой части</td></tr>
+  <tr><th scope="row">Сигнал</th><td>среднее 10 последних прогнозов лучшей модели, затем ранг/N</td></tr>
+  <tr><th scope="row">Портфели</th><td>Signal Weighted, Equal Weighted, Min Variance, Max Signal-to-Risk; ковариация по всей выборке, 0 ≤ w ≤ 1</td></tr>
+  <tr><th scope="row">Доходность</th><td>постоянные веса на всём периоде, ставка 5% в коэффициенте Шарпа</td></tr>
+</tbody></table></div>
+
+<h2>Сигналы и веса на KASE</h2>
+{{ table(signals, d=3, index_name='Бумага') | safe }}
+{{ table(weights, pct=('Signal Weighted', 'Equal Weighted', 'Min Variance', 'Max Signal-to-Risk'), d=1, index_name='Бумага') | safe }}
+
+<h2>Результат как в статье: веса постоянны на всём периоде</h2>
+<figure class="fig panel"><img alt="Стоимость портфелей на KASE" src="data:image/png;base64,{{ img }}"></figure>
+<h3>KASE</h3>
+{{ table(full, pct=spct, d=2, index_name='Стратегия') | safe }}
+<h3>Таблица IV статьи, NSE, 2020–2025</h3>
+{{ table(published, pct=spct, d=2, index_name='Стратегия') | safe }}
+
+<h2>Те же веса только на тестовой части</h2>
+{{ table(test, pct=spct, d=2, index_name='Стратегия') | safe }}
+<p class="note">Тестовая часть начинается {{ i.test_start.strftime('%d.%m.%Y') }}. Прогнозы моделей относятся к этим датам, поэтому и здесь веса известны только в конце периода. Объём на KASE дан в тенге, а не в штуках; после масштабирования MinMax на модели это не влияет.</p>
+{% endblock %}

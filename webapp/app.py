@@ -270,6 +270,37 @@ def article_page():
     return render_template("article.html", **c)
 
 
+@functools.lru_cache(maxsize=8)
+def _original(kase_set: str, models: int):
+    from dss import original_a4
+    return original_a4.run_kase(kase_set, models)
+
+
+@app.route("/article/original")
+def article_original_page():
+    """Authors' code of article [A4] applied to KASE (in-sample, as in the article)."""
+    from dss import original_a4 as oa
+    c = context("article")
+    kset = request.args.get("kset", "seven")
+    kset = kset if kset in oa.KASE_DROP else "seven"
+    have = [n for n, f in oa.STAGE_A_FILES.items() if (RESULTS / f).exists()]
+    try:
+        models = int(request.args.get("models", have[0]))
+    except ValueError:
+        models = have[0]
+    models = models if models in have else have[0]
+    r = _original(kset, models)
+    s = r.summary.set_index("Stock")
+    signals = pd.DataFrame({"Лучшая модель": s["Best_Model"], "Прогноз, % в день": s["Predicted_Return"] * 100,
+                            "Ранг": s["Rank_Score"]})
+    c.update(r=r, kset=kset, models=models, have=have, signals=signals, weights=r.weights,
+             sets={"seven": "7 бумаг, история с 2020 года", "nine": "9 бумаг, общая история с 01.2023"},
+             full=r.table.rename(columns=STRATEGY_RU), test=r.test_table.rename(columns=STRATEGY_RU),
+             published=oa.PUBLISHED_TABLE.rename(columns=STRATEGY_RU), spct=STRATEGY_PCT,
+             img=plots.equity_curves(r.curves, "KASE, весь период: стоимость портфеля (база = 100), веса постоянные"))
+    return render_template("article_original.html", **c)
+
+
 def _csv(name: str) -> pd.DataFrame | None:
     try:
         return pd.read_csv(RESULTS / name)
