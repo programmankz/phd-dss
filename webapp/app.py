@@ -222,6 +222,85 @@ def attract_page():
     return render_template("attract.html", **c)
 
 
+@functools.lru_cache(maxsize=8)
+def _replication(universe: str, kase_set: str = "nine"):
+    from dss import replication
+    return replication.run(universe, kase_set=kase_set)
+
+
+STRATEGY_RU = {"total_return": "Доходность за период", "annual_return": "Годовая доходность", "annual_vol": "Волатильность",
+               "sharpe": "Шарп (ставка 5%)", "sharpe_local": "Шарп (ставка НБ РК)", "max_drawdown": "Макс. просадка",
+               "turnover": "Оборот за ребаланс."}
+STRATEGY_PCT = ("Доходность за период", "Годовая доходность", "Волатильность", "Макс. просадка", "Оборот за ребаланс.")
+
+
+@app.route("/article")
+def article_page():
+    """Experiment of article [A4] on KASE next to the NSE sample of the article."""
+    from dss import replication
+    c = context("article")
+    kset = request.args.get("kset", "nine")
+    if kset not in replication.KASE_SETS:
+        kset = "nine"
+    kz, nse = _replication("kase", kset), _replication("nse")
+
+    def strategies(r):
+        return r.strategies.rename(columns=STRATEGY_RU)
+
+    def models(r):
+        return r.models.rename(columns={"hit_rate": "Точность направления", "IC_t": "t(IC)", "dm": "DM",
+                                        "p_value": "p", "verdict": "Против наивного прогноза"}).fillna("—")
+
+    def tests(r):
+        t = r.sharpe_tests
+        return pd.DataFrame({"Шарп": t.sharpe, "Разница с равными весами": t["diff"], "p": t.p_value,
+                             "p (поправка Холма)": t.p_holm}).fillna("—")
+
+    own = lambda r: r.strategies.loc[[i for i in r.strategies.index if not i.startswith("Рынок")]]   # noqa: E731
+    best, nbest = own(kz)["sharpe"].idxmax(), own(nse)["sharpe"].idxmax()
+    rows = {"Статья [A4], NSE, опубликовано": replication.PUBLISHED,
+            f"NSE, расчёт СППР: {nbest}": nse.strategies.loc[nbest], "NSE, расчёт СППР: Equal Weighted": nse.strategies.loc["Equal Weighted"],
+            f"KASE: {best}": kz.strategies.loc[best], "KASE: Equal Weighted": kz.strategies.loc["Equal Weighted"]}
+    summary = pd.DataFrame({"Годовая доходность": {k: float(v["annual_return"]) for k, v in rows.items()},
+                            "Волатильность": {k: float(v["annual_vol"]) for k, v in rows.items()},
+                            "Шарп (ставка 5%)": {k: float(v["sharpe"]) for k, v in rows.items()}})
+    c.update(kz=kz, nse=nse, kset=kset, sets=replication.KASE_SETS, best=best, summary=summary,
+             kz_strategies=strategies(kz), nse_strategies=strategies(nse), kz_models=models(kz), nse_models=models(nse),
+             kz_tests=tests(kz), spct=STRATEGY_PCT, img=plots.equity_curves(kz.curves, "KASE, тестовая выборка: стоимость портфеля (база = 100), без издержек"))
+    return render_template("article.html", **c)
+
+
+@functools.lru_cache(maxsize=8)
+def _original(kase_set: str, models: int):
+    from dss import original_a4
+    return original_a4.run_kase(kase_set, models)
+
+
+@app.route("/article/original")
+def article_original_page():
+    """Authors' code of article [A4] applied to KASE (in-sample, as in the article)."""
+    from dss import original_a4 as oa
+    c = context("article")
+    kset = request.args.get("kset", "seven")
+    kset = kset if kset in oa.KASE_DROP else "seven"
+    have = [n for n, f in oa.STAGE_A_FILES.items() if (RESULTS / f).exists()]
+    try:
+        models = int(request.args.get("models", have[0]))
+    except ValueError:
+        models = have[0]
+    models = models if models in have else have[0]
+    r = _original(kset, models)
+    s = r.summary.set_index("Stock")
+    signals = pd.DataFrame({"Лучшая модель": s["Best_Model"], "Прогноз, % в день": s["Predicted_Return"] * 100,
+                            "Ранг": s["Rank_Score"]})
+    c.update(r=r, kset=kset, models=models, have=have, signals=signals, weights=r.weights,
+             sets={"seven": "7 бумаг, история с 2020 года", "nine": "9 бумаг, общая история с 01.2023"},
+             full=r.table.rename(columns=STRATEGY_RU), test=r.test_table.rename(columns=STRATEGY_RU),
+             published=oa.PUBLISHED_TABLE.rename(columns=STRATEGY_RU), spct=STRATEGY_PCT,
+             img=plots.equity_curves(r.curves, "KASE, весь период: стоимость портфеля (база = 100), веса постоянные"))
+    return render_template("article_original.html", **c)
+
+
 def _csv(name: str) -> pd.DataFrame | None:
     try:
         return pd.read_csv(RESULTS / name)

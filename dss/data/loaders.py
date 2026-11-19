@@ -457,6 +457,46 @@ def fetch_kase_history(tickers=None, start: str = "2019-01-01", end: str | None 
     return {"close": px, "volume": vol}
 
 
+def fetch_kase_ohlcv(tickers=None, start: str = "2020-01-01", end: str | None = None) -> pd.DataFrame:
+    """Daily bars of KASE shares from the kase.kz chart feed, long format: Date, Ticker, Open, High,
+    Low, Close, Volume (turnover in KZT). Only days with trades; prices are unadjusted for dividends."""
+    today = pd.Timestamp.today().normalize()
+    t0 = int(pd.Timestamp(start).timestamp())
+    t1 = int((pd.Timestamp(end) + pd.Timedelta(days=1) if end else today + pd.Timedelta(days=1)).timestamp())
+    frames = []
+    for t in tickers or KASE_TICKERS:
+        j = json.loads(_get(f"https://kase.kz/tv-charts/securities/history?symbol={t}&resolution=D&from={t0}&to={t1}"))
+        if j.get("s") != "ok" or not j.get("t"):
+            print(f"  {t}: нет данных на kase.kz — пропущен")
+            continue
+        df = pd.DataFrame({"Date": pd.to_datetime(j["t"], unit="s").normalize(), "Ticker": t, "Open": j["o"],
+                           "High": j["h"], "Low": j["l"], "Close": j["c"], "Volume": j["v"]})
+        frames.append(df[df["Date"] < today].drop_duplicates("Date", keep="last"))
+    if not frames:
+        raise RuntimeError("kase.kz не вернул данных ни по одному тикеру")
+    return pd.concat(frames, ignore_index=True)
+
+
+def load_kase_ohlcv(adjust: bool = True) -> pd.DataFrame:
+    """data/ohlcv_kase.csv; with ``adjust`` all prices of a day are scaled by the ratio of the
+    dividend-adjusted close (data/prices_kase.csv with corporate actions) to the raw close, which
+    is what ``auto_adjust=True`` of Yahoo Finance does for the NSE data of article [A4]."""
+    df = pd.read_csv(data_dir() / "ohlcv_kase.csv", parse_dates=["Date"])
+    if not adjust:
+        return df
+    adj, _ = raw_prices("kase")
+    out = []
+    for t, g in df.groupby("Ticker", sort=False):
+        g = g.copy()
+        if t in adj.columns:
+            f = (adj[t].reindex(g["Date"]).to_numpy() / g["Close"].to_numpy())
+            f = pd.Series(f).ffill().bfill().fillna(1.0).to_numpy()
+            for c in ("Open", "High", "Low", "Close"):
+                g[c] = g[c].to_numpy() * f
+        out.append(g)
+    return pd.concat(out, ignore_index=True)
+
+
 def fetch_kase(tickers=None, start: str = "2019-01-01", end: str | None = None) -> pd.DataFrame:
     """Daily closes (KZT) from the kase.kz chart feed. Unadjusted for dividends, as on KASE."""
     return fetch_kase_history(tickers, start, end)["close"]
