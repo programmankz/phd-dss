@@ -89,6 +89,8 @@ python scripts/experiment_2026_11.py # предрегистрированный 
 python scripts/experiment_2008_2019.py # независимая проверка на 2008–2019 гг. (docs/preregistration_2008_2019.md) → docs/results_2008_2019.md
 python scripts/control_constant_shares.py # разведочный контроль: правила против постоянных долей → docs/control_constant_shares.md
 python scripts/extended_universe.py      # разведочная проверка на расширенном наборе (KASE и AIX) → docs/extended_universe.md
+python scripts/attractiveness.py         # инвестиционная привлекательность: индекс KASE и рост ВВП → docs/attractiveness.md
+python -m dss.cli attract --definition accel   # sign | accel | panel; страница /attract в веб-интерфейсе
 ```
 
 ## Тесты и проверка стиля

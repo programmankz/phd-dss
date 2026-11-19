@@ -33,7 +33,7 @@ def main(argv=None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     f = sub.add_parser("fetch", help="загрузить реальные данные")
     f.add_argument("what", choices=["gdp", "fx", "nse", "kase", "rates", "kase-dividends", "kase-extra", "extended",
-                                         "kase-index", "bonds", "brent", "macro", "fx-panel"])
+                                         "kase-index", "bonds", "brent", "macro", "fx-panel", "gdp-quarterly"])
     f.add_argument("--start", default=None)
     f.add_argument("--tickers", default=None, help="kase/nse: тикеры через запятую вместо набора по умолчанию")
     for name in ("warmup", "decide", "report", "sensitivity", "significance", "export"):
@@ -58,7 +58,28 @@ def main(argv=None) -> int:
             s.add_argument("-o", "--output", default=None,
                            help="файл .xlsx (нужен openpyxl) или .zip (CSV); по умолчанию dss_tables.xlsx/.zip")
     sub.add_parser("serve")
+    at = sub.add_parser("attract", help="инвестиционная привлекательность: индекс KASE и рост ВВП")
+    at.add_argument("--definition", default="sign", choices=["sign", "accel", "panel"],
+                    help="sign: рост > 0; accel: ускорение роста; panel: рост > 0, обучение на панели стран")
+    at.add_argument("--freq", default=None, choices=["annual", "quarterly"])
+    at.add_argument("--window", type=int, default=6, help="окно доходности индекса KASE, мес.")
     a = p.parse_args(argv)
+
+    if a.cmd == "attract":
+        from . import attractiveness
+        r = attractiveness.run(a.definition, a.freq, a.window)
+        s = r.signal
+        with pd.option_context("display.width", 200, "display.max_columns", 20):
+            print(f"{r.label}; данные {attractiveness.FREQS[r.freq]}, {r.data.index[0]} – {r.data.index[-1]}, "
+                  f"окно KASE {r.window_months} мес.")
+            for note in r.notes:
+                print("Внимание:", note)
+            print(r.metrics.to_string(float_format=lambda v: num(v, 3), na_rep="—"), "\n")
+            print(r.coefficients.to_string(float_format=lambda v: num(v, 4), na_rep="—"), "\n")
+            if s["available"]:
+                print(f"Показатель на {s['period']}: A = {s['value']}, P(A = 1) = {num(s['probs']['ARIMA + KASE'], 2)}, "
+                      f"прогноз роста {num(s['growth']['ARIMA + KASE'], 1)}% (ARIMA без индекса {num(s['growth']['ARIMA'], 1)}%)")
+        return 0
 
     if a.cmd == "fetch":
         out = loaders.data_dir()
@@ -108,6 +129,9 @@ def main(argv=None) -> int:
             div = loaders.fetch_kase_dividends(loaders.KASE_NEW_TICKERS, cache=out / "dividends_kase_new.csv")
             print(f"prices_kase_new.csv: {', '.join(h['close'].columns)}; prices_aix.csv: {', '.join(x['close'].columns)} "
                   f"(USD); dividends_kase_new.csv: {len(div)} выплат")
+        elif a.what == "gdp-quarterly":
+            s = loaders.fetch_gdp_quarterly_kz()
+            print(f"gdp_quarterly_kz.csv: {len(s)} кварталов, {s.index.min()} – {s.index.max()}")
         elif a.what == "kase-index":
             df = loaders.fetch_kase_index(start=a.start or "2008-01-01")
             bi = loaders.fetch_kase_bond_indices(start=a.start or "2008-01-01")

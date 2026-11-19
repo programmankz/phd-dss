@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Привлекательность{% endblock %}
+{% block content %}
+<h1><span class="rn m1" style="vertical-align:middle">A</span> Инвестиционная привлекательность Казахстана</h1>
+<p class="lede">Показатель A равен 1, если выполнено выбранное условие на рост реального ВВП, и 0 в противном случае. Индекс KASE проверяется как опережающий индикатор: используется его доходность за {{ a.window_months }} мес. до начала периода. Все прогнозы строятся только по данным, известным до периода.</p>
+<form method="get" class="controls" action="/attract">
+  {% for k, v in raw.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <label>Определение привлекательности
+    <select name="adef">{% for k, d in defs.items() %}<option value="{{ k }}" {{ 'selected' if k == a.definition }}>{{ d.label }}</option>{% endfor %}</select></label>
+  <label>Данные
+    <select name="afreq">{% for k, v in freqs.items() %}<option value="{{ k }}" {{ 'selected' if k == a.freq }}>{{ v }}</option>{% endfor %}</select></label>
+  <label>Окно доходности KASE, мес.<input type="number" min="1" max="24" step="1" name="awin" value="{{ a.window_months }}"></label>
+  <label>Число кластеров стран<input type="number" min="2" max="6" step="1" name="ak" value="{{ cl.k }}"></label>
+  <button class="btn" type="submit">Рассчитать</button>
+</form>
+{% for n in a.notes %}<p class="note"><b>Внимание.</b> {{ n }}</p>{% endfor %}
+
+{% set s = a.signal %}
+{% if s.available %}
+<div class="grid g4">
+  <div class="kpi m1"><div class="v">{{ s.value }}</div><div class="l">показатель A на {{ s.period }}, модель ARIMA + KASE</div></div>
+  <div class="kpi m1"><div class="v">{{ fmt(s.probs['ARIMA + KASE'], 'pct', 0) }}</div><div class="l">вероятность A = 1</div></div>
+  <div class="kpi m1"><div class="v">{{ fmt(s.growth['ARIMA + KASE'], 'num', 1) }}%</div><div class="l">прогноз роста ВВП (без индекса: {{ fmt(s.growth['ARIMA'], 'num', 1) }}%)</div></div>
+  <div class="kpi m1"><div class="v">{{ ('%+.1f' % s.x['kase']).replace('.', ',') }}%</div><div class="l">индекс KASE за {{ a.window_months }} мес. до периода</div></div>
+</div>
+{% else %}
+<p class="note">Прогноз на {{ s.period }} недоступен: нет значений индекса KASE на конец предыдущего периода.</p>
+{% endif %}
+
+<h2>Данные и проверка вне выборки</h2>
+<figure class="fig panel"><img alt="Рост ВВП и индекс KASE" src="data:image/png;base64,{{ img }}"></figure>
+<div class="grid g2" style="margin-top:14px">
+  <div><h3>Сравнение моделей вне выборки</h3>{{ table(a.metrics, d=3, index_name='Модель', highlight='ARIMA + KASE') | safe }}
+    <p class="note">Расширяющееся окно, {{ a.probs.index[0] }} – {{ a.probs.index[-1] }}, {{ a.probs|length }} прогнозов. Доля A = 1 в данных: {{ fmt(a.diagnostics.share_positive, 'pct', 0) }}. Тест Диболда–Мариано: ARIMA против ARIMA + KASE {{ fmt(a.diagnostics.dm_arima_vs_arimax[0], 'num', 2) }} (p = {{ fmt(a.diagnostics.dm_arima_vs_arimax[1], 'num', 3) }}); AR(1) против AR(1) + KASE {{ fmt(a.diagnostics.dm_ar_vs_kase[0], 'num', 2) }} (p = {{ fmt(a.diagnostics.dm_ar_vs_kase[1], 'num', 3) }}). Положительная статистика означает, что модель с индексом точнее. ARIMA и ARIMA + KASE имеют один порядок (d по тесту Дики–Фуллера) и одну выборку; AR(1) — это ARIMA(1,0,0).</p></div>
+  <div><h3>Вероятности на {{ s.period }} по моделям</h3>
+    {% if s.available %}{{ table(s.probs.to_frame('P(A = 1)'), d=2, index_name='Модель') | safe }}{% endif %}</div>
+</div>
+
+<h2>Интерпретация</h2>
+<div class="grid g2">
+  <div><h3>Уравнение роста: g(t) = c + a·g(t−1) + b·KASE</h3>{{ table(a.coefficients, d=4, index_name='Фактор') | safe }}
+    <p class="note">Вся выборка, {{ a.diagnostics.n }} наблюдений, R² = {{ fmt(a.diagnostics.r2, 'num', 2) }}. Стандартные ошибки Ньюи–Уэста, устойчивые к гетероскедастичности и автокорреляции.</p></div>
+  <div><h3>Вклад факторов в текущий сигнал (логистическая регрессия)</h3>
+    {% if s.available and s.contributions|length %}{{ table(s.contributions.to_frame('Вклад в логит'), d=2, index_name='Фактор') | safe }}
+    <p class="note">Вклад равен коэффициенту, умноженному на отклонение фактора от среднего в единицах стандартного отклонения. Положительный вклад повышает вероятность A = 1.</p>
+    {% else %}<p class="note">В данных один класс, логистическая регрессия не оценивается.</p>{% endif %}</div>
+</div>
+
+<h2>Лаг и гетероскедастичность</h2>
+<div class="grid g2">
+  <div><h3>Корреляция роста с доходностью KASE по сдвигу окна</h3>{{ table(a.lag_profile, d=3, index_name='Сдвиг, периодов') | safe }}
+    <p class="note">Сдвиг 0 соответствует окну, которое заканчивается перед началом периода. Таблица справочная: окно задано заранее и по ней не подбиралось.</p></div>
+  <div><h3>Остатки уравнения роста</h3>
+    <div class="tbl"><table><tbody>
+      <tr><th scope="row">ARCH-LM (1 лаг)</th><td class="num">{{ fmt(a.diagnostics.arch_lm[0], 'num', 2) }}</td><td class="num">p = {{ fmt(a.diagnostics.arch_lm[1], 'num', 3) }}</td></tr>
+      <tr><th scope="row">Бройш–Паган</th><td class="num">{{ fmt(a.diagnostics.breusch_pagan[0], 'num', 2) }}</td><td class="num">p = {{ fmt(a.diagnostics.breusch_pagan[1], 'num', 3) }}</td></tr>
+      <tr><th scope="row">Средний темп роста, %</th><td class="num">{{ fmt(a.diagnostics.mean_growth, 'num', 2) }}</td><td></td></tr>
+      <tr><th scope="row">Ст. откл. роста до {{ a.diagnostics.split }}, п.п.</th><td class="num">{{ fmt(a.diagnostics.std_first_half, 'num', 2) }}</td><td></td></tr>
+      <tr><th scope="row">Ст. откл. роста с {{ a.diagnostics.split }}, п.п.</th><td class="num">{{ fmt(a.diagnostics.std_second_half, 'num', 2) }}</td><td></td></tr>
+    </tbody></table></div>
+    <p class="note">Малое p означает, что дисперсия остатков непостоянна. Выводы о значимости в любом случае сделаны по устойчивым ошибкам.</p></div>
+</div>
+<h2>Кластеры стран по среднему темпу и разбросу роста</h2>
+<div class="grid g2">
+  <figure class="fig panel"><img alt="Кластеры стран" src="data:image/png;base64,{{ img_cl }}"></figure>
+  <div>{{ table(cl.profiles.rename(columns={'countries': 'Стран', 'mean': 'Средний темп роста, %', 'std': 'Ст. откл. роста, п.п.'}), d=2, index_name='Кластер', highlight=cl.country_cluster) | safe }}
+    <h3 style="margin-top:12px">Силуэт по числу кластеров</h3>{{ table(cl.silhouette.to_frame('Силуэт'), d=3, index_name='Кластеров') | safe }}
+    <p class="note">K-means по стандартизованным среднему и стандартному отклонению годового роста с {{ cl.start }} г. Казахстан в кластере {{ cl.country_cluster }}. В статье [A1] кластеров четыре и добавлена асимметрия; здесь число кластеров задаёт пользователь, по умолчанию 2 (наибольший силуэт).</p></div>
+</div>
+{% if a.panel is not none %}
+<h2>Панель стран: качество на всех странах</h2>
+{{ table(a.panel, d=3, index_name='Модель') | safe }}
+{% endif %}
+{% endblock %}

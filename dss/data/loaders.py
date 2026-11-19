@@ -1033,3 +1033,47 @@ def adjust_demergers(px: pd.DataFrame, events: dict) -> pd.DataFrame:
     actions = pd.DataFrame({"ticker": list(events), "ex_date": pd.to_datetime(list(events.values())),
                             "method": "ratio", "factor": float("nan")})
     return apply_corporate_actions(px, actions)[0]
+
+
+# ---------------------------------------------------------------- quarterly GDP and the long KASE index
+STAT_QGDP_URL = "https://stat.gov.kz/api/iblock/element/283162/file/ru/"
+QUARTERS_RU = {"I квартал": 1, "II квартал": 2, "III квартал": 3, "IV квартал": 4}
+
+
+def parse_stat_quarterly_gdp(sheets: dict) -> pd.Series:
+    """Quarterly GDP workbook of stat.gov.kz (production method): sheet "3" holds the volume index,
+    quarter to the same quarter of the previous year, %. Returns growth in % (index minus 100)."""
+    df = sheets["3"]
+    years, quarters = df.iloc[3].tolist(), df.iloc[4].tolist()
+    row = df[df.iloc[:, 1].astype(str).str.strip() == "Валовой внутренний продукт"].iloc[0].tolist()
+    out, year = {}, None
+    for j in range(2, len(row)):
+        if pd.notna(years[j]):
+            year = int(float(years[j]))
+        q = QUARTERS_RU.get(str(quarters[j]).strip())
+        val = pd.to_numeric(row[j], errors="coerce")
+        if year and q and pd.notna(val):
+            out[pd.Period(f"{year}Q{q}", "Q")] = float(val) - 100.0
+    return pd.Series(out, name="growth_yoy").sort_index()
+
+
+def fetch_gdp_quarterly_kz(cache: Path | None = None) -> pd.Series:
+    """Quarterly real GDP growth of Kazakhstan, % y/y; writes data/gdp_quarterly_kz.csv."""
+    s = parse_stat_quarterly_gdp(_excel_sheets(_get(STAT_QGDP_URL, timeout=120, agent=BROWSER_AGENT)))
+    path = cache or data_dir() / "gdp_quarterly_kz.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    s.rename_axis("quarter").round(4).to_csv(path)
+    return s
+
+
+def load_gdp_quarterly_kz() -> pd.Series:
+    df = pd.read_csv(data_dir() / "gdp_quarterly_kz.csv")
+    return pd.Series(df["growth_yoy"].to_numpy(float), index=pd.PeriodIndex(df["quarter"], freq="Q"), name="growth_yoy")
+
+
+def load_index_kase_long() -> pd.Series:
+    """Daily close of the KASE index from 12.07.2000: index_kase_2000_2007.csv + index_kase.csv."""
+    parts = [pd.read_csv(data_dir() / name, index_col=0, parse_dates=True)["close"]
+             for name in ("index_kase_2000_2007.csv", "index_kase.csv") if (data_dir() / name).exists()]
+    s = pd.concat(parts).sort_index()
+    return s[~s.index.duplicated(keep="last")].dropna()
